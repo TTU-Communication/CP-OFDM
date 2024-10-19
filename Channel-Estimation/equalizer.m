@@ -3,9 +3,9 @@ function [out_sig] = equalizer(sig, ch, varargin)
     narginchk(2, 4);
 
     validateattributes(sig, {'double'}, ...
-        {'2d', 'nonnan', 'finite', 'nonempty'}, mfilename, 'Signal');
+        {'2d', 'nonnan', 'finite', 'nonempty'}, mfilename, 'Signal', 1);
     validateattributes(ch, {'double'}, ...
-        {'2d', 'nonnan', 'finite', 'nonempty'}, mfilename, 'Channel');
+        {'2d', 'nonnan', 'finite', 'nonempty'}, mfilename, 'Channel', 2);
 
     if nargin == 2
         mode = 1;   % Zero-Forcing
