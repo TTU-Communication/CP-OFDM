@@ -1,10 +1,10 @@
 clc; clear;
 
 %% parameter setting
-signal_size = 640;                   % Data subcarrier size
-FFT_size = 2048;             % FFT size
+signal_size = 640;                  % Data subcarrier size
+FFT_size = 2048;                    % FFT size
 CP_size = FFT_size * 1 / 8;         % Cyclic Prefix size
-channel_length = 8;                 % Multipath length in rayleight distribution (no LoS)
+% channel_length = 8;                 % Multipath length in rayleight distribution (no LoS)
 constellation_symbols_amount = 16;  % The point amount of constellation
 modulation_mode = 'QAM';            % Modulation (Avaliable with 'PSK', 'QAM')
 base_signal_amount = 10000;         % testing signal numbers (will multiply a factor)
@@ -69,7 +69,8 @@ for EbN0_idx = 1:size(EbN0s, 2)
 
         % Channel
         signal_power = PowerCalculator(Companding_signal);
-        [channel_signal, channel] = channel_Rayleigh(Companding_signal, channel_length, 1/channel_length, FFT_size);
+        % [channel_signal, channel] = channel_Rayleigh(Companding_signal, channel_length, 1/channel_length, FFT_size);
+        channel_signal = Companding_signal;
 
         % Noise
         noise = noise_AWGN(size(channel_signal), snr, signal_power, channel_signal(1));
@@ -80,7 +81,8 @@ for EbN0_idx = 1:size(EbN0s, 2)
         Decompanding_signal = channel_noise_signal;
         remove_CP_signal = CPRemover(Decompanding_signal, CP_size);
         FFT_signal = 1 / sqrt(FFT_size) .* fft(remove_CP_signal, FFT_size);
-        EQ_signal = equalizer(FFT_signal, channel);
+        % EQ_signal = equalizer(FFT_signal, channel);
+        EQ_signal = FFT_signal;
         demapped_signal = demapping_subcarrier(EQ_signal, signal_size);
         output_data_bits = Demodulator(demapped_signal, constellation_symbols_amount);
 
