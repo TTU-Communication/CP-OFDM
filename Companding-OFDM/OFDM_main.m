@@ -55,10 +55,11 @@ for EbN0_idx = 1:size(EbN0s, 2)
         modulation_signal = Modulator(incoming_data_bits, constellation_symbols_amount);
         IFFT_signal = sqrt(FFT_size) .* ifft(modulation_signal, FFT_size);
         CP_signal = CPAdder(IFFT_signal, CP_size);
+        Companding_signal = CP_signal;
 
         % Channel
-        signal_power = PowerCalculator(CP_signal);
-        [channel_signal, channel] = channel_Rayleigh(CP_signal, channel_length, 1/channel_length, FFT_size);
+        signal_power = PowerCalculator(Companding_signal);
+        [channel_signal, channel] = channel_Rayleigh(Companding_signal, channel_length, 1/channel_length, FFT_size);
 
         % Noise
         noise = noise_AWGN(size(channel_signal), snr, signal_power, channel_signal(1));
@@ -66,7 +67,8 @@ for EbN0_idx = 1:size(EbN0s, 2)
         channel_noise_signal = channel_signal + noise;
 
         % Rx
-        remove_CP_signal = CPRemover(channel_noise_signal, CP_size);
+        Decompanding_signal = channel_noise_signal;
+        remove_CP_signal = CPRemover(Decompanding_signal, CP_size);
         FFT_signal = 1 / sqrt(FFT_size) .* fft(remove_CP_signal, FFT_size);
         EQ_signal = equalizer(FFT_signal, channel);
         output_data_bits = Demodulator(EQ_signal, constellation_symbols_amount);
