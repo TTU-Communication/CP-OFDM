@@ -37,6 +37,8 @@ PtoA_dB = @(sig) 10 * log10(max(abs(sig) .^ 2) ./ mean(abs(sig) .^ 2));
 
 %% data storage
 BER = zeros(1, length(EbN0s));
+CP_OFDM_sig_sample = [];
+Companding_OFDM_sig_sample = [];
 
 %% CP-OFDM
 for EbN0_idx = 1:size(EbN0s, 2)
@@ -53,6 +55,7 @@ for EbN0_idx = 1:size(EbN0s, 2)
     if EbN0_idx == length(EbN0s)
         CP_OFDM_PtoA_dB = zeros(max_signal / signals_per_transmit, signals_per_transmit);
         Companding_OFDM_PtoA_dB = zeros(max_signal / signals_per_transmit, signals_per_transmit);
+        rand_idx = randi([1 max_signal / signals_per_transmit], 1);
     end
 
     parfor i = 1:(max_signal / signals_per_transmit)
@@ -85,6 +88,12 @@ for EbN0_idx = 1:size(EbN0s, 2)
         if EbN0_idx == length(EbN0s)
             CP_OFDM_PtoA_dB(i, :) = PtoA_dB(CP_signal);
             Companding_OFDM_PtoA_dB(i, :) = PtoA_dB(Companding_signal);
+            if i == rand_idx
+                CP_OFDM_sig_sample = [CP_OFDM_sig_sample; CP_signal(:, 1)];
+                Companding_OFDM_sig_sample = [Companding_OFDM_sig_sample; ...
+                    Companding_signal(:, 1)];
+            end
+
         end
         
     end
@@ -114,3 +123,10 @@ CCDF_Companding = 1 - ECDF_Companding;
 semilogy(PAPR_Companding, CCDF_Companding, DisplayName='Companding OFDM');
 legend;
 xlim([0 14]);
+
+%% plot PSD
+figure
+pspectrum(CP_OFDM_sig_sample);
+grid on; hold on;
+pspectrum(Companding_OFDM_sig_sample);
+legend('CP OFDM', 'Companding OFDM');
