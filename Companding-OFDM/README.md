@@ -1,2 +1,2 @@
-# CP-OFDM
+# Companding OFDM
 My master's student program
