@@ -33,6 +33,7 @@ switch (lower(modulation_mode))
 end
 CPAdder = @(sig, len) [sig(end-len+1:end, :); sig];
 CPRemover = @(sig, len) sig(len+1:end, :);
+PtoA_dB = @(sig) 10 * log10(max(abs(sig) .^ 2) ./ mean(abs(sig) .^ 2));
 
 %% data storage
 BER = zeros(1, length(EbN0s));
@@ -48,6 +49,11 @@ for EbN0_idx = 1:size(EbN0s, 2)
     test_bers = zeros(1, max_signal / signals_per_transmit);
 
     fprintf('EbN0 = %2d, max signal number = %d\n', EbN0s(EbN0_idx), max_signal);
+
+    if EbN0_idx == length(EbN0s)
+        CP_OFDM_PtoA_dB = zeros(max_signal / signals_per_transmit, signals_per_transmit);
+        Companding_OFDM_PtoA_dB = zeros(max_signal / signals_per_transmit, signals_per_transmit);
+    end
 
     parfor i = 1:(max_signal / signals_per_transmit)
         % Tx
@@ -76,6 +82,11 @@ for EbN0_idx = 1:size(EbN0s, 2)
         % BER calculate
         [~, test_bers(i)] = biterr(incoming_data_bits, output_data_bits);
 
+        if EbN0_idx == length(EbN0s)
+            CP_OFDM_PtoA_dB(i, :) = PtoA_dB(CP_signal);
+            Companding_OFDM_PtoA_dB(i, :) = PtoA_dB(Companding_signal);
+        end
+        
     end
 
     BER(EbN0_idx) = mean(test_bers);
@@ -88,3 +99,18 @@ semilogy(EbN0s, BER);
 xlabel('$E_{b}/N_{0}$', 'Interpreter', 'latex', 'FontSize', 16);
 ylabel('BER', 'FontSize', 16);
 grid on;
+
+%% plot PAPR
+CP_OFDM_PtoA_dB = reshape(CP_OFDM_PtoA_dB, [], 1);
+Companding_OFDM_PtoA_dB = reshape(Companding_OFDM_PtoA_dB, [], 1);
+
+figure
+[ECDF_CP, PAPR_CP] = ecdf(CP_OFDM_PtoA_dB);
+CCDF_CP = 1 - ECDF_CP;
+semilogy(PAPR_CP, CCDF_CP, DisplayName='CP OFDM');
+grid on; hold on;
+[ECDF_Companding, PAPR_Companding] = ecdf(Companding_OFDM_PtoA_dB);
+CCDF_Companding = 1 - ECDF_Companding;
+semilogy(PAPR_Companding, CCDF_Companding, DisplayName='Companding OFDM');
+legend;
+xlim([0 14]);
