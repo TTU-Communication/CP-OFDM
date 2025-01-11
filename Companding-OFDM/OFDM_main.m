@@ -57,7 +57,7 @@ for EbN0_idx = 1:size(EbN0s, 2)
         CP_signal = CPAdder(IFFT_signal, CP_size);
 
         % Channel
-        signal_power = PowerCalculator(IFFT_signal);
+        signal_power = PowerCalculator(CP_signal);
         [channel_signal, channel] = channel_Rayleigh(CP_signal, channel_length, 1/channel_length, FFT_size);
 
         % Noise
