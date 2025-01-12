@@ -127,6 +127,9 @@ CCDF_Companding = 1 - ECDF_Companding;
 semilogy(PAPR_Companding, CCDF_Companding, DisplayName='Companding OFDM');
 legend;
 xlim([0 14]);
+xlabel('Power (dB)');
+ylabel('Probability');
+title('PAPR');
 
 %% plot PSD
 figure
