@@ -36,7 +36,8 @@ CPRemover = @(sig, len) sig(len+1:end, :);
 PtoA_dB = @(sig) 10 * log10(max(abs(sig) .^ 2) ./ mean(abs(sig) .^ 2));
 
 %% data storage
-BER = zeros(1, length(EbN0s));
+BER_CP = zeros(1, length(EbN0s));
+BER_Companding = zeros(1, length(EbN0s));
 CP_OFDM_sig_sample = [];
 Companding_OFDM_sig_sample = [];
 
@@ -48,7 +49,8 @@ for EbN0_idx = 1:size(EbN0s, 2)
     % Calculate the amount of test signals based on SNR
     max_signal = (10 ^ floor(snr / 10)) * base_signal_amount;
     % BER storage depends on EbN0
-    test_bers = zeros(1, max_signal / signals_per_transmit);
+    test_bers_cp = zeros(1, max_signal / signals_per_transmit);
+    test_bers_companding = zeros(1, max_signal / signals_per_transmit);
 
     fprintf('EbN0 = %2d, max signal number = %d\n', EbN0s(EbN0_idx), max_signal);
 
@@ -67,27 +69,47 @@ for EbN0_idx = 1:size(EbN0s, 2)
         CP_signal = CPAdder(IFFT_signal, CP_size);
         Companding_signal = CP_signal;
 
-        % Channel
-        signal_power = PowerCalculator(Companding_signal);
-        % [channel_signal, channel] = channel_Rayleigh(Companding_signal, channel_length, 1/channel_length, FFT_size);
-        channel_signal = Companding_signal;
+        % Channel CP-OFDM
+        signal_cp_power = PowerCalculator(CP_signal);
+        % [channel_cp_signal, channel_cp] = channel_Rayleigh(CP_signal, ...
+        %     channel_length, 1/channel_length, FFT_size);
+        channel_cp_signal = CP_signal;
+        % Channel Companding OFDM
+        signal_companding_power = PowerCalculator(Companding_signal);
+        % [channel_companding_signal, channel_companding] = channel_Rayleigh(Companding_signal, ...
+        %     channel_length, 1/channel_length, FFT_size);
+        channel_companding_signal = Companding_signal;
 
-        % Noise
-        noise = noise_AWGN(size(channel_signal), snr, signal_power, channel_signal(1));
-        noise_power = PowerCalculator(noise);
-        channel_noise_signal = channel_signal + noise;
+        % Noise CP-OFDM
+        noise_cp = noise_AWGN(size(channel_cp_signal), snr, signal_cp_power, channel_cp_signal(1));
+        noise_cp_power = PowerCalculator(noise_cp);
+        channel_noise_cp_signal = channel_cp_signal + noise_cp;
+        % Noise Companding OFDM
+        noise_companding = noise_AWGN(size(channel_companding_signal), snr, ...
+            signal_companding_power, channel_companding_signal(1));
+        noise_companding_power = PowerCalculator(noise_companding);
+        channel_noise_companding_signal = channel_companding_signal + noise_companding;
 
-        % Rx
-        Decompanding_signal = channel_noise_signal;
-        remove_CP_signal = CPRemover(Decompanding_signal, CP_size);
-        FFT_signal = 1 / sqrt(FFT_size) .* fft(remove_CP_signal, FFT_size);
-        % EQ_signal = equalizer(FFT_signal, channel);
-        EQ_signal = FFT_signal;
-        demapped_signal = demapping_subcarrier(EQ_signal, signal_size);
-        output_data_bits = Demodulator(demapped_signal, constellation_symbols_amount);
+        % Rx CP-OFDM
+        remove_CP_cp_signal = CPRemover(channel_noise_cp_signal, CP_size);
+        FFT_cp_signal = 1 / sqrt(FFT_size) .* fft(remove_CP_cp_signal, FFT_size);
+        % EQ_cp_signal = equalizer(FFT_cp_signal, channel_cp);
+        EQ_cp_signal = FFT_cp_signal;
+        demapped_cp_signal = demapping_subcarrier(EQ_cp_signal, signal_size);
+        output_data_bits_cp = Demodulator(demapped_cp_signal, constellation_symbols_amount);
+        % Rx Companding
+        Decompanding_companding_signal = channel_noise_companding_signal;
+        remove_CP_companding_signal = CPRemover(Decompanding_companding_signal, CP_size);
+        FFT_companding_signal = 1 / sqrt(FFT_size) .* fft(remove_CP_companding_signal, FFT_size);
+        % EQ_companding_signal = equalizer(FFT_companding_signal, channel_companding);
+        EQ_companding_signal = FFT_companding_signal;
+        demapped_companding_signal = demapping_subcarrier(EQ_companding_signal, signal_size);
+        output_data_bits_companding = Demodulator(demapped_companding_signal, constellation_symbols_amount);
+
 
         % BER calculate
-        [~, test_bers(i)] = biterr(incoming_data_bits, output_data_bits);
+        [~, test_bers_cp(i)] = biterr(incoming_data_bits, output_data_bits_cp);
+        [~, test_bers_companding(i)] = biterr(incoming_data_bits, output_data_bits_companding);
 
         if EbN0_idx == length(EbN0s)
             CP_OFDM_PtoA_dB(i, :) = PtoA_dB(CP_signal);
@@ -102,16 +124,20 @@ for EbN0_idx = 1:size(EbN0s, 2)
         
     end
 
-    BER(EbN0_idx) = mean(test_bers);
+    BER_CP(EbN0_idx) = mean(test_bers_cp);
+    BER_Companding(EbN0_idx) = mean(test_bers_companding);
 
 end
 
 %% plot BER
 figure
-semilogy(EbN0s, BER);
+semilogy(EbN0s, BER_CP, DisplayName='CP OFDM');
+hold on;
+semilogy(EbN0s, BER_Companding, DisplayName='Companding OFDM');
 xlabel('$E_{b}/N_{0}$', 'Interpreter', 'latex', 'FontSize', 16);
 ylabel('BER', 'FontSize', 16);
 grid on;
+legend;
 
 %% plot PAPR
 CP_OFDM_PtoA_dB = reshape(CP_OFDM_PtoA_dB, [], 1);
