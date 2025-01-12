@@ -11,6 +11,8 @@ base_signal_amount = 10000;         % testing signal numbers (will multiply a fa
 signals_per_transmit = 100;         % Every loop test signals
 EbN0s = 0:1:20;                     % Energy per bit to noise power spectral density ratio(dB)
 
+mu = 1;                            % Companding parameter (mu-law)
+
 %% value depends on parameter
 bits_per_symbol = log2(constellation_symbols_amount);
 bits_amount = signal_size * bits_per_symbol;
@@ -67,7 +69,7 @@ for EbN0_idx = 1:size(EbN0s, 2)
         mapped_signal = mapping_subcarrier(modulation_signal, FFT_size);
         IFFT_signal = sqrt(FFT_size) .* ifft(mapped_signal, FFT_size);
         CP_signal = CPAdder(IFFT_signal, CP_size);
-        Companding_signal = CP_signal;
+        Companding_signal = companding(CP_signal, mu);
 
         % Channel CP-OFDM
         signal_cp_power = PowerCalculator(CP_signal);
@@ -98,7 +100,7 @@ for EbN0_idx = 1:size(EbN0s, 2)
         demapped_cp_signal = demapping_subcarrier(EQ_cp_signal, signal_size);
         output_data_bits_cp = Demodulator(demapped_cp_signal, constellation_symbols_amount);
         % Rx Companding
-        Decompanding_companding_signal = channel_noise_companding_signal;
+        Decompanding_companding_signal = decompanding(channel_noise_companding_signal, mu);
         remove_CP_companding_signal = CPRemover(Decompanding_companding_signal, CP_size);
         FFT_companding_signal = 1 / sqrt(FFT_size) .* fft(remove_CP_companding_signal, FFT_size);
         % EQ_companding_signal = equalizer(FFT_companding_signal, channel_companding);
