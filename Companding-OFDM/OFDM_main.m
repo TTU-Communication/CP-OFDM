@@ -11,7 +11,7 @@ base_signal_amount = 10000;         % testing signal numbers (will multiply a fa
 signals_per_transmit = 100;         % Every loop test signals
 EbN0s = 0:1:20;                     % Energy per bit to noise power spectral density ratio(dB)
 
-mu = 1;                            % Companding parameter (mu-law)
+mu = 1;                             % Companding parameter (mu-law)
 
 %% value depends on parameter
 bits_per_symbol = log2(constellation_symbols_amount);
