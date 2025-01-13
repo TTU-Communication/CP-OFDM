@@ -165,3 +165,14 @@ pspectrum(CP_OFDM_sig_sample);
 grid on; hold on;
 pspectrum(Companding_OFDM_sig_sample);
 legend('CP OFDM', 'Companding OFDM');
+
+%% plot the line of companding
+figure
+x = 0:0.01:1;
+plot(x, x, DisplayName='y = x');
+grid on; hold on;
+plot(x, companding(x, mu), DisplayName='Companding');
+legend;
+xlabel('V_{in}');
+ylabel('V_{out}');
+title('Conversion curve');
