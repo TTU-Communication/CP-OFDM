@@ -1,17 +1,19 @@
 clc; clear;
 
 %% parameter setting
-signal_size = 32;                   % Data subcarrier size
-FFT_size = signal_size;             % FFT size
-CP_size = FFT_size * 1 / 4;         % Cyclic Prefix size
-channel_length = 8;                 % Multipath length in rayleight distribution (no LoS)
-constellation_symbols_amount = 16;  % The point amount of constellation
-modulation_mode = 'QAM';            % Modulation (Avaliable with 'PSK', 'QAM')
-base_signal_amount = 10000;         % testing signal numbers (will multiply a factor)
-signals_per_transmit = 100;         % Every loop test signals
-EbN0s = 0:1:20;                     % Energy per bit to noise power spectral density ratio(dB)
+FFT_size = 64;                          % FFT size
+nullSCIdx = getNullSCIndex(FFT_size);   % Null Subcarrier Index
+[pilotSCIdx, pilotValue] = getPilotSCIndexAndValue(FFT_size);   % Pilot Subcarrier Index & Value
+CP_size = FFT_size * 1 / 4;             % Cyclic Prefix size
+channel_length = 8;                     % Multipath length in rayleight distribution (no LoS)
+constellation_symbols_amount = 16;      % The point amount of constellation
+modulation_mode = 'QAM';                % Modulation (Avaliable with 'PSK', 'QAM')
+base_signal_amount = 1000;              % testing signal numbers (will multiply a factor)
+signals_per_transmit = 100;             % Every loop test signals
+EbN0s = 0:1:20;                         % Energy per bit to noise power spectral density ratio(dB)
 
 %% value depends on parameter
+signal_size = FFT_size - length(nullSCIdx) - length(pilotSCIdx);    % Data subcarrier size
 bits_per_symbol = log2(constellation_symbols_amount);
 bits_amount = signal_size * bits_per_symbol;
 
@@ -53,7 +55,8 @@ for EbN0_idx = 1:size(EbN0s, 2)
         % Tx
         incoming_data_bits = RandomBits(bits_amount, signals_per_transmit);
         modulation_signal = Modulator(incoming_data_bits, constellation_symbols_amount);
-        IFFT_signal = sqrt(FFT_size) .* ifft(modulation_signal, FFT_size);
+        map_signal = subcarrierMapping(modulation_signal, FFT_size, nullSCIdx, pilotSCIdx, pilotValue);
+        IFFT_signal = sqrt(FFT_size) .* ifft(map_signal, FFT_size);
         CP_signal = CPAdder(IFFT_signal, CP_size);
 
         % Channel
@@ -69,7 +72,8 @@ for EbN0_idx = 1:size(EbN0s, 2)
         remove_CP_signal = CPRemover(channel_noise_signal, CP_size);
         FFT_signal = 1 / sqrt(FFT_size) .* fft(remove_CP_signal, FFT_size);
         EQ_signal = equalizer(FFT_signal, channel);
-        output_data_bits = Demodulator(EQ_signal, constellation_symbols_amount);
+        demap_signal = subcarrierDemapping(EQ_signal, nullSCIdx, pilotSCIdx);
+        output_data_bits = Demodulator(demap_signal, constellation_symbols_amount);
 
         % BER calculate
         [~, test_bers(i)] = biterr(incoming_data_bits, output_data_bits);
