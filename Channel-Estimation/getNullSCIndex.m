@@ -1,7 +1,7 @@
 function [nullSCIdx] = getNullSCIndex(fftSize)
     %GETNULLSCINDEX get the correspond null subcarrier index to fft
     %size
-    %   Avaliable FFT size: 64, 128, 256, 512, 1024
+    %   Avaliable FFT size: 32, 64, 128, 256, 512, 1024
     %   Reference: IEEE 802.11
     
     validateattributes(fftSize, {'numeric'}, {"scalar", "integer"}, mfilename, "FFTSize", 1);
@@ -10,6 +10,8 @@ function [nullSCIdx] = getNullSCIndex(fftSize)
     end
 
     switch(fftSize)
+        case 32 % IEEE 802.11ah
+            nullSCIdx = [-16:-14 0 14:15];
         case 64 % IEEE 802.11ac
             nullSCIdx = [-32:-29 0 29:31];
         case 128 % IEEE 802.11ac
