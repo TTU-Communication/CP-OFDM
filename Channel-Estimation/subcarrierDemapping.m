@@ -1,4 +1,4 @@
-function [outSig] = subcarrierDemapping(sig, varargin)
+function [outSig] = subcarrierDemapping(sig, pilotSCIdx, varargin)
     %SUBCARRIERDEMAPPING Extracts data and pilot subcarriers from received
     %   OFDM symbols.
     %
@@ -10,10 +10,10 @@ function [outSig] = subcarrierDemapping(sig, varargin)
     %     - sig         : A matrix of size N-by-M, where each column
     %                     represents one received OFDM symbol including
     %                     data, pilot, and null subcarriers.
+    %     - pilotSCIdx  : Indices of the pilot subcarriers.
     %     - nullSCIdx   : Indices of the null subcarriers (e.g., DC or
     %                     guard bands). Can be empty if no null subcarriers
     %                     are used.
-    %     - pilotSCIdx  : Indices of the pilot subcarriers.
     %
     %   Outputs:
     %     - outSig      : Matrix containing the data subcarriers, after
@@ -27,9 +27,11 @@ function [outSig] = subcarrierDemapping(sig, varargin)
     narginchk(2, 3);
 
     fftSize = size(sig, 1);
+    validIdx = {'vector', 'positive', '<=', fftSize};
     validateattributes(sig, {'numeric'}, {'2d', 'finite'}, mfilename, 'Sig', 1);
+    validateattributes(pilotSCIdx, {'numeric'}, validIdx, mfilename, 'PilotSCIdx', 2);
 
-    [nullSCIdx, pilotSCIdx] = validInputArgs(fftSize, varargin{:});
+    [nullSCIdx] = validInputArgs(fftSize, varargin{:});
 
     if any(ismember(nullSCIdx, pilotSCIdx))
         error("Some of the indices of null subcarriers and pilot subcarriers are the same.");
@@ -39,25 +41,20 @@ function [outSig] = subcarrierDemapping(sig, varargin)
     outSig = sig(sigIdx, :);
 end
 
-function [nullSCIdx, pilotSCIdx] = validInputArgs(fftSize, varargin)
+function [nullSCIdx] = validInputArgs(fftSize, varargin)
     
     validIdx = {'vector', 'positive', '<=', fftSize};
 
     nInArgs = nargin;
-    if nInArgs == 2
+    if nInArgs == 1
         nullSCIdx = [];
-        pilotSCIdx = varargin{1};
-        
-        validateattributes(pilotSCIdx, {'numeric'}, validIdx, mfilename, 'PilotSCIdx');
 
-    elseif nInArgs == 3
+    elseif nInArgs == 2
         nullSCIdx = varargin{1};
-        pilotSCIdx = varargin{2};
 
         if ~isempty(nullSCIdx)
             validateattributes(nullSCIdx, {'numeric'}, validIdx, mfilename, 'NullSCIdx');
         end
-        validateattributes(pilotSCIdx, {'numeric'}, validIdx, mfilename, 'PilotSCIdx');
 
     end
 

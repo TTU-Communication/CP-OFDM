@@ -55,7 +55,7 @@ for EbN0_idx = 1:size(EbN0s, 2)
         % Tx
         incoming_data_bits = RandomBits(bits_amount, signals_per_transmit);
         modulation_signal = Modulator(incoming_data_bits, constellation_symbols_amount);
-        map_signal = subcarrierMapping(modulation_signal, FFT_size, nullSCIdx, pilotSCIdx, pilotValue);
+        map_signal = subcarrierMapping(modulation_signal, FFT_size, pilotSCIdx, pilotValue, nullSCIdx);
         IFFT_signal = sqrt(FFT_size) .* ifft(map_signal, FFT_size);
         CP_signal = CPAdder(IFFT_signal, CP_size);
 
@@ -72,7 +72,7 @@ for EbN0_idx = 1:size(EbN0s, 2)
         remove_CP_signal = CPRemover(channel_noise_signal, CP_size);
         FFT_signal = 1 / sqrt(FFT_size) .* fft(remove_CP_signal, FFT_size);
         EQ_signal = equalizer(FFT_signal, channel);
-        demap_signal = subcarrierDemapping(EQ_signal, nullSCIdx, pilotSCIdx);
+        demap_signal = subcarrierDemapping(EQ_signal, pilotSCIdx, nullSCIdx);
         output_data_bits = Demodulator(demap_signal, constellation_symbols_amount);
 
         % BER calculate

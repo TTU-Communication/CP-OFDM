@@ -1,4 +1,4 @@
-function [outSig] = subcarrierMapping(sig, fftSize, varargin)
+function [outSig] = subcarrierMapping(sig, fftSize, pilotSCIdx, pilotValue, varargin)
     % SUBCARRIERMAPPING Maps subcarriers for null, pilot, and data signals.
     %
     %   This function inserts OFDM-modulated signals onto appropriate
@@ -9,14 +9,14 @@ function [outSig] = subcarrierMapping(sig, fftSize, varargin)
     %     - sig         : An N-by-M matrix, where each column is an
     %                     independent modulated signals for OFDM symbols.
     %     - fftSize     : FFT size, i.e., the total number of subcarriers.
-    %     - nullSCIdx   : Indices of null subcarriers (e.g., DC subcarrier,
-    %                     guard bands). Can be empty if no null subcarriers
-    %                     are used.
     %     - pilotSCIdx  : Indices of pilot subcarriers.
     %     - pilotValue  : A vector of pilot values (±1) defined according 
     %                     to the IEEE 802.11ac/ax standard. The values are
     %                     applied cyclically across OFDM symbols to enable
     %                     phase tracking and frequency offset correction.
+    %     - nullSCIdx   : Indices of null subcarriers (e.g., DC subcarrier,
+    %                     guard bands). Can be empty if no null subcarriers
+    %                     are used.
     %
     %   Output:
     %     - outSig      : A fftSize-by-M matrix where each column
@@ -30,10 +30,13 @@ function [outSig] = subcarrierMapping(sig, fftSize, varargin)
     
     narginchk(4, 5);
 
+    validIdx = {'vector', 'positive', '<=', fftSize};
     validateattributes(sig, {'numeric'}, {'2d', 'finite'}, mfilename, 'Sig', 1);
     validateattributes(fftSize, {'numeric'}, {'scalar', 'positive'}, mfilename, 'FFTSize', 2);
+    validateattributes(pilotSCIdx, {'numeric'}, validIdx, mfilename, 'PilotSCIdx', 3);
+    validateattributes(pilotValue, {'numeric'}, {'2d', 'finite'}, mfilename, 'PilotValue', 4);
 
-    [nullSCIdx, pilotSCIdx, pilotValue] = validInputArgs(fftSize, varargin{:});
+    [nullSCIdx] = validInputArgs(fftSize, varargin{:});
 
     if fftSize ~= size(sig, 1) + length(nullSCIdx) + length(pilotSCIdx)
         error("The input signal length is not the same as the FFT size.");
@@ -53,29 +56,20 @@ function [outSig] = subcarrierMapping(sig, fftSize, varargin)
 
 end
 
-function [nullSCIdx, pilotSCIdx, pilotValue] = validInputArgs(fftSize, varargin)
+function [nullSCIdx] = validInputArgs(fftSize, varargin)
     
     validIdx = {'vector', 'positive', '<=', fftSize};
 
     nInArgs = nargin;
-    if nInArgs == 3
+    if nInArgs == 1
         nullSCIdx = [];
-        pilotSCIdx = varargin{1};
-        pilotValue = varargin{2};
 
-        validateattributes(pilotSCIdx, {'numeric'}, validIdx, mfilename, 'PilotSCIdx');
-        validateattributes(pilotValue, {'numeric'}, {'2d', 'finite'}, mfilename, 'PilotSCValue');
-
-    elseif nInArgs == 4
+    elseif nInArgs == 2
         nullSCIdx = varargin{1};
-        pilotSCIdx = varargin{2};
-        pilotValue = varargin{3};
 
         if ~isempty(nullSCIdx)
             validateattributes(nullSCIdx, {'numeric'}, validIdx, mfilename, 'NullSCIdx');
         end
-        validateattributes(pilotSCIdx, {'numeric'}, validIdx, mfilename, 'PilotSCIdx');
-        validateattributes(pilotValue, {'numeric'}, {'2d', 'finite'}, mfilename, 'PilotSCValue');
 
     end
 
