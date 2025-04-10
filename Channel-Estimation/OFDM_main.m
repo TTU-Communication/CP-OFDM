@@ -38,8 +38,10 @@ CPRemover = @(sig, len) sig(len+1:end, :);
 
 %% data storage
 BER = zeros(1, length(EbN0s));
+estBER = zeros(1, length(EbN0s));
 
 %% CP-OFDM
+tic
 for EbN0_idx = 1:size(EbN0s, 2)
     % SNR calculation
     snr = EbN0s(EbN0_idx) + 10 * log10(bits_per_symbol) ...
@@ -48,6 +50,7 @@ for EbN0_idx = 1:size(EbN0s, 2)
     max_signal = (10 ^ floor(snr / 10)) * base_signal_amount;
     % BER storage depends on EbN0
     test_bers = zeros(1, max_signal / signals_per_transmit);
+    estTestBers = zeros(1, max_signal / signals_per_transmit);
 
     fprintf('EbN0 = %2d, max signal number = %d\n', EbN0s(EbN0_idx), max_signal);
 
@@ -71,22 +74,35 @@ for EbN0_idx = 1:size(EbN0s, 2)
         % Rx
         remove_CP_signal = CPRemover(channel_noise_signal, CP_size);
         FFT_signal = 1 / sqrt(FFT_size) .* fft(remove_CP_signal, FFT_size);
+
+        % actual channel
         EQ_signal = equalizer(FFT_signal, channel);
         demap_signal = subcarrierDemapping(EQ_signal, pilotSCIdx, nullSCIdx);
         output_data_bits = Demodulator(demap_signal, constellation_symbols_amount);
 
+        % estimated channel
+        channelEst = channelEstimation(FFT_signal, pilotSCIdx, pilotValue, nullSCIdx);
+        estEQSig = equalizer(FFT_signal, channelEst);
+        demap_signal = subcarrierDemapping(estEQSig, nullSCIdx, pilotSCIdx);
+        estOutDataBits = Demodulator(demap_signal, constellation_symbols_amount);
+
         % BER calculate
         [~, test_bers(i)] = biterr(incoming_data_bits, output_data_bits);
+        [~, estTestBers(i)] = biterr(incoming_data_bits, estOutDataBits);
 
     end
 
     BER(EbN0_idx) = mean(test_bers);
+    estBER(EbN0_idx) = mean(estTestBers);
 
 end
-
+toc
 %% plot BER
 figure
-semilogy(EbN0s, BER);
+semilogy(EbN0s, BER, DisplayName='actual channel');
+hold on;
+semilogy(EbN0s, estBER, DisplayName='estimated channel');
 xlabel('$E_{b}/N_{0}$', 'Interpreter', 'latex', 'FontSize', 16);
 ylabel('BER', 'FontSize', 16);
+legend;
 grid on;
