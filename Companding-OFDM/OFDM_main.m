@@ -1,88 +1,88 @@
 clc; clear;
 
 %% parameter setting
-signal_size = 32;                   % Data subcarrier size
-FFT_size = signal_size;             % FFT size
-CP_size = FFT_size * 1 / 4;         % Cyclic Prefix size
-channel_length = 8;                 % Multipath length in rayleight distribution (no LoS)
-constellation_symbols_amount = 16;  % The point amount of constellation
-modulation_mode = 'QAM';            % Modulation (Avaliable with 'PSK', 'QAM')
-base_signal_amount = 10000;         % testing signal numbers (will multiply a factor)
-signals_per_transmit = 100;         % Every loop test signals
-EbN0s = 0:1:20;                     % Energy per bit to noise power spectral density ratio(dB)
+numData = 32;                   % Data subcarrier size
+fftSize = numData;              % FFT size
+cpLen = fftSize * 1 / 4;        % Cyclic Prefix size
+channelLen = 8;                 % Multipath length in rayleight distribution (no LoS)
+modOrder = 16;                  % The point amount of constellation
+modType = 'QAM';                % Modulation (Avaliable with 'PSK', 'QAM')
+baseSigCount = 10000;           % testing signal numbers (will multiply a factor)
+sigPerLoop = 100;               % Every loop test signals
+ebn0List = 0:1:20;              % Energy per bit to noise power spectral density ratio(dB)
 
 %% value depends on parameter
-bits_per_symbol = log2(constellation_symbols_amount);
-bits_amount = signal_size * bits_per_symbol;
+bitsPerModSymbol = log2(modOrder);
+bitsPerOFDMSymbol = numData * bitsPerModSymbol;
 
 %% package 
-RandomBits = @(r, c) randi([0 1], r, c);
-PowerCalculator = @(sig) sum(abs(sig) .^ 2) / size(sig, 1);
-switch (lower(modulation_mode))
+randomBits = @(r, c) randi([0 1], r, c);
+calcPower = @(sig) sum(abs(sig) .^ 2) / size(sig, 1);
+switch (lower(modType))
     case 'psk'
-        Modulator = @(input, M) pskmod(input, M, InputType="bit");
-        Demodulator = @(input, M) pskdemod(input, M, OutputType="bit");
+        modulator = @(input, M) pskmod(input, M, InputType="bit");
+        demodulator = @(input, M) pskdemod(input, M, OutputType="bit");
     case 'qam'
-        Modulator = @(input, M) qammod(input, M, InputType="bit", ...
+        modulator = @(input, M) qammod(input, M, InputType="bit", ...
             UnitAveragePower=true);
-        Demodulator = @(input, M) qamdemod(input, M, OutputType="bit", ...
+        demodulator = @(input, M) qamdemod(input, M, OutputType="bit", ...
             UnitAveragePower=true);
     otherwise
         error('OFDMMain:invalidModulation', ...
             'The modulation mode must be one of PSK or QAM.');
 end
-CPAdder = @(sig, len) [sig(end-len+1:end, :); sig];
-CPRemover = @(sig, len) sig(len+1:end, :);
+cpAdder = @(sig, len) [sig(end-len+1:end, :); sig];
+cpRemover = @(sig, len) sig(len+1:end, :);
 
 %% data storage
-BER = zeros(1, length(EbN0s));
+ber = zeros(1, length(ebn0List));
 
 %% CP-OFDM
-for EbN0_idx = 1:size(EbN0s, 2)
+for idxEbn0 = 1:size(ebn0List, 2)
     % SNR calculation
-    snr = EbN0s(EbN0_idx) + 10 * log10(bits_per_symbol) ...
-        + 10 * log10(signal_size / (FFT_size + CP_size));
+    snr = ebn0List(idxEbn0) + 10 * log10(bitsPerModSymbol) ...
+        + 10 * log10(numData / (fftSize + cpLen));
     % Calculate the amount of test signals based on SNR
-    max_signal = (10 ^ floor(snr / 10)) * base_signal_amount;
+    totalSigCount = (10 ^ floor(snr / 10)) * baseSigCount;
     % BER storage depends on EbN0
-    test_bers = zeros(1, max_signal / signals_per_transmit);
+    tempBER = zeros(1, totalSigCount / sigPerLoop);
 
-    fprintf('EbN0 = %2d, max signal number = %d\n', EbN0s(EbN0_idx), max_signal);
+    fprintf('EbN0 = %2d, max signal number = %d\n', ebn0List(idxEbn0), totalSigCount);
 
-    parfor i = 1:(max_signal / signals_per_transmit)
+    parfor idxRun = 1:(totalSigCount / sigPerLoop)
         % Tx
-        incoming_data_bits = RandomBits(bits_amount, signals_per_transmit);
-        modulation_signal = Modulator(incoming_data_bits, constellation_symbols_amount);
-        IFFT_signal = sqrt(FFT_size) .* ifft(modulation_signal, FFT_size);
-        CP_signal = CPAdder(IFFT_signal, CP_size);
+        inDataBits = randomBits(bitsPerOFDMSymbol, sigPerLoop);
+        txModSig = modulator(inDataBits, modOrder);
+        txIFFTSig = sqrt(fftSize) .* ifft(txModSig, fftSize);
+        txOFDMSig = cpAdder(txIFFTSig, cpLen);
 
         % Channel
-        signal_power = PowerCalculator(CP_signal);
-        [channel_signal, channel] = channel_Rayleigh(CP_signal, channel_length, 1/channel_length, FFT_size);
+        sigPower = calcPower(txOFDMSig);
+        [fadedSig, channel] = rayleighChannel(txOFDMSig, channelLen, 1/channelLen, fftSize);
 
         % Noise
-        noise = noise_AWGN(size(channel_signal), snr, signal_power, channel_signal(1));
-        noise_power = PowerCalculator(noise);
-        channel_noise_signal = channel_signal + noise;
+        noise = awgnx(size(fadedSig), snr, sigPower, fadedSig(1));
+        noisePower = calcPower(noise);
+        rxNoisySig = fadedSig + noise;
 
         % Rx
-        remove_CP_signal = CPRemover(channel_noise_signal, CP_size);
-        FFT_signal = 1 / sqrt(FFT_size) .* fft(remove_CP_signal, FFT_size);
-        EQ_signal = equalizer(FFT_signal, channel);
-        output_data_bits = Demodulator(EQ_signal, constellation_symbols_amount);
+        rxNoCPSig = cpRemover(rxNoisySig, cpLen);
+        rxFFTSig = 1 / sqrt(fftSize) .* fft(rxNoCPSig, fftSize);
+        rxEQSig = equalizer(rxFFTSig, channel);
+        outDataBits = demodulator(rxEQSig, modOrder);
 
         % BER calculate
-        [~, test_bers(i)] = biterr(incoming_data_bits, output_data_bits);
+        [~, tempBER(idxRun)] = biterr(inDataBits, outDataBits);
 
     end
 
-    BER(EbN0_idx) = mean(test_bers);
+    ber(idxEbn0) = mean(tempBER);
 
 end
 
 %% plot BER
 figure
-semilogy(EbN0s, BER);
+semilogy(ebn0List, ber);
 xlabel('$E_{b}/N_{0}$', 'Interpreter', 'latex', 'FontSize', 16);
 ylabel('BER', 'FontSize', 16);
 grid on;

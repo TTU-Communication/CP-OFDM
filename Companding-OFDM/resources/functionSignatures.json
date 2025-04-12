@@ -3,10 +3,10 @@
     {
         "inputs":
         [
-            {"name":"signal",       "kind":"required",  "type":["numeric", "2d"]},
-            {"name":"channel",      "kind":"required",  "type":["numeric", "2d"]},
-            {"name":"noise_power",  "kind":"ordered",   "type":["numeric", "2d"]},
-            {"name":"signal_power", "kind":"ordered",   "type":["numeric", "2d"]}
+            {"name":"inSig",       "kind":"required",  "type":["numeric", "2d"]},
+            {"name":"H",           "kind":"required",  "type":["numeric", "2d"]},
+            {"name":"noisePower",  "kind":"ordered",   "type":["numeric", "2d"]},
+            {"name":"sigPower",    "kind":"ordered",   "type":["numeric", "2d"]}
         ],
         "outputs":
         [
