@@ -30,29 +30,40 @@ function [outSig] = subcarrierMapping(sig, fftSize, pilotSCIdx, pilotValue, vara
     
     narginchk(4, 5);
 
-    validIdx = {'vector', 'positive', '<=', fftSize};
     validateattributes(sig, {'numeric'}, {'2d', 'finite'}, mfilename, 'Sig', 1);
+
+    if isrow(sig)
+        newSig = sig.';
+    else
+        newSig = sig;
+    end
+
     validateattributes(fftSize, {'numeric'}, {'scalar', 'positive'}, mfilename, 'FFTSize', 2);
+    validIdx = {'vector', 'positive', '<=', fftSize};
     validateattributes(pilotSCIdx, {'numeric'}, validIdx, mfilename, 'PilotSCIdx', 3);
     validateattributes(pilotValue, {'numeric'}, {'vector', 'finite'}, mfilename, 'PilotValue', 4);
 
     [nullSCIdx] = validInputArgs(fftSize, varargin{:});
 
-    if fftSize ~= size(sig, 1) + length(nullSCIdx) + length(pilotSCIdx)
+    if fftSize ~= size(newSig, 1) + length(nullSCIdx) + length(pilotSCIdx)
         error("The input signal length is not the same as the FFT size.");
     end
     if any(ismember(nullSCIdx, pilotSCIdx))
         error("Some of the indices of null subcarriers and pilot subcarriers are the same.");
     end
 
-    sigCol = size(sig, 2);
+    sigCol = size(newSig, 2);
     sigIdx = setdiff(1:fftSize, [nullSCIdx pilotSCIdx]);
     tempPilotValueIdx = (1:length(pilotSCIdx)).' + (1:sigCol) - 1;
     tempPilotValueIdx = mod(tempPilotValueIdx - 1, length(pilotValue)) + 1;
 
     outSig = zeros(fftSize, sigCol);
-    outSig(sigIdx, :) = sig;
+    outSig(sigIdx, :) = newSig;
     outSig(pilotSCIdx, :) = reshape(pilotValue(tempPilotValueIdx), length(pilotSCIdx), sigCol);
+
+    if isrow(sig)
+        outSig = outSig.';
+    end
 
 end
 

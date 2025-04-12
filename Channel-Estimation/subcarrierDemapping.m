@@ -26,9 +26,16 @@ function [outSig] = subcarrierDemapping(sig, pilotSCIdx, varargin)
     
     narginchk(2, 3);
 
-    fftSize = size(sig, 1);
-    validIdx = {'vector', 'positive', '<=', fftSize};
     validateattributes(sig, {'numeric'}, {'2d', 'finite'}, mfilename, 'Sig', 1);
+
+    if isrow(sig)
+        newSig = sig.';
+    else
+        newSig = sig;
+    end
+
+    fftSize = size(newSig, 1);
+    validIdx = {'vector', 'positive', '<=', fftSize};
     validateattributes(pilotSCIdx, {'numeric'}, validIdx, mfilename, 'PilotSCIdx', 2);
 
     [nullSCIdx] = validInputArgs(fftSize, varargin{:});
@@ -38,7 +45,12 @@ function [outSig] = subcarrierDemapping(sig, pilotSCIdx, varargin)
     end
 
     sigIdx = setdiff(1:fftSize, [nullSCIdx pilotSCIdx]);
-    outSig = sig(sigIdx, :);
+    outSig = newSig(sigIdx, :);
+
+    if isrow(sig)
+        outSig = outSig.';
+    end
+    
 end
 
 function [nullSCIdx] = validInputArgs(fftSize, varargin)
