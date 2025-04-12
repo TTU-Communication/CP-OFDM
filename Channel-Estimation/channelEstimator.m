@@ -36,9 +36,13 @@ function [channel] = channelEstimator(sig, pilotSCIdx, pilotValue, varargin)
     [fftSize, sigCol] = size(newSig);
     validIdx = {'vector', 'positive', '<=', fftSize};
     validateattributes(pilotSCIdx, {'numeric'}, validIdx, mfilename, 'PilotSCIdx', 2);
-    validateattributes(pilotValue, {'numeric'}, {'2d', 'finite'}, mfilename, 'PilotValue', 3);
+    validateattributes(pilotValue, {'numeric'}, {'vector', 'finite'}, mfilename, 'PilotValue', 3);
 
     [nullSCIdx] = validInputArgs(fftSize, varargin{:});
+
+    if any(ismember(nullSCIdx, pilotSCIdx))
+        error("Some of the indices of null subcarriers and pilot subcarriers are the same.");
+    end
 
     pilotValueLen = length(pilotValue);
     dataSCIdx = setdiff(1:fftSize, [nullSCIdx pilotSCIdx]);

@@ -34,7 +34,7 @@ function [outSig] = subcarrierMapping(sig, fftSize, pilotSCIdx, pilotValue, vara
     validateattributes(sig, {'numeric'}, {'2d', 'finite'}, mfilename, 'Sig', 1);
     validateattributes(fftSize, {'numeric'}, {'scalar', 'positive'}, mfilename, 'FFTSize', 2);
     validateattributes(pilotSCIdx, {'numeric'}, validIdx, mfilename, 'PilotSCIdx', 3);
-    validateattributes(pilotValue, {'numeric'}, {'2d', 'finite'}, mfilename, 'PilotValue', 4);
+    validateattributes(pilotValue, {'numeric'}, {'vector', 'finite'}, mfilename, 'PilotValue', 4);
 
     [nullSCIdx] = validInputArgs(fftSize, varargin{:});
 
