@@ -81,7 +81,7 @@ for EbN0_idx = 1:size(EbN0s, 2)
         output_data_bits = Demodulator(demap_signal, constellation_symbols_amount);
 
         % estimated channel
-        channelEst = channelEstimation(FFT_signal, pilotSCIdx, pilotValue, nullSCIdx);
+        channelEst = channelEstimator(FFT_signal, pilotSCIdx, pilotValue, nullSCIdx);
         estEQSig = equalizer(FFT_signal, channelEst);
         demap_signal = subcarrierDemapping(estEQSig, nullSCIdx, pilotSCIdx);
         estOutDataBits = Demodulator(demap_signal, constellation_symbols_amount);
