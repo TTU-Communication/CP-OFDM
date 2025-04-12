@@ -1,36 +1,36 @@
-function [out_sig] = equalizer(sig, ch, varargin)
+function [outSig] = equalizer(inSig, H, varargin)
     
     narginchk(2, 4);
 
-    validateattributes(sig, {'double'}, ...
-        {'2d', 'nonnan', 'finite', 'nonempty'}, mfilename, 'Signal', 1);
-    validateattributes(ch, {'double'}, ...
-        {'2d', 'nonnan', 'finite', 'nonempty'}, mfilename, 'Channel', 2);
+    validateattributes(inSig, {'double'}, {'2d', 'nonnan', 'finite', 'nonempty'}, ...
+                        mfilename, 'Signal', 1);
+    validateattributes(H, {'double'}, {'2d', 'nonnan', 'finite', 'nonempty'}, ...
+                        mfilename, 'Channel', 2);
 
     if nargin == 2
-        mode = 1;   % Zero-Forcing
+        eqMode = 1;   % Zero-Forcing
     elseif nargin == 3
-        mode = 2;   % MMSE
-        noise_power = varargin{1};
-        validateattributes(noise_power, {'double'}, ...
+        eqMode = 2;   % MMSE
+        noisePower = varargin{1};
+        validateattributes(noisePower, {'double'}, ...
             {'2d', 'nonnan', 'finite', 'nonempty'}, mfilename, 'Noise_power');
-        signal_power = 1;
+        sigPower = 1;
     elseif nargin == 4
-        mode = 2;   % MMSE
-        noise_power = varargin{1};
-        validateattributes(noise_power, {'double'}, ...
+        eqMode = 2;   % MMSE
+        noisePower = varargin{1};
+        validateattributes(noisePower, {'double'}, ...
             {'2d', 'nonnan', 'finite', 'nonempty'}, mfilename, 'Noise_power');
-        signal_power = varargin{2};
-        validateattributes(signal_power, {'double'}, ...
+        sigPower = varargin{2};
+        validateattributes(sigPower, {'double'}, ...
             {'2d', 'nonnan', 'finite', 'nonempty'}, mfilename, 'Signal_power');
     end
 
-    switch (mode)
+    switch (eqMode)
         case 1  % Zero-Forcing
-            eq = 1 ./ ch;
+            eq = 1 ./ H;
         case 2  % MMSE
-            eq = conj(ch) .* (ch .* conj(ch) + (noise_power ./ signal_power)) .^ -1;
+            eq = conj(H) .* (H .* conj(H) + (noisePower ./ sigPower)) .^ -1;
     end
 
-    out_sig = eq .* sig;
+    outSig = eq .* inSig;
 end
