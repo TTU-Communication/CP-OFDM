@@ -58,7 +58,7 @@ function [outSig] = subcarrierMapping(sig, fftSize, pilotSCIdx, pilotValue, vara
     tempPilotValueIdx = (1:length(pilotSCIdx)).' + (1:sigCol) - 1;
     tempPilotValueIdx = mod(tempPilotValueIdx - 1, length(pilotValue)) + 1;
 
-    outSig = zeros(fftSize, sigCol);
+    outSig = zeros(fftSize, sigCol, 'like', newSig(1));
     outSig(sigIdx, :) = newSig;
     outSig(pilotSCIdx, :) = reshape(pilotValue(tempPilotValueIdx), length(pilotSCIdx), sigCol);
 

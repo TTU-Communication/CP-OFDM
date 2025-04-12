@@ -49,7 +49,7 @@ function [channel] = channelEstimator(sig, pilotSCIdx, pilotValue, varargin)
     % Prepare estimate channel
     pilotValueLen = length(pilotValue);
     dataSCIdx = setdiff(1:fftSize, [nullSCIdx pilotSCIdx]);
-    channel = nan(size(newSig));
+    channel = zeros(size(newSig), 'like', newSig(1));
 
     for idx = 1:sigCol
         tempPilotValueIdx = (1:length(pilotSCIdx)) + idx - 1;
