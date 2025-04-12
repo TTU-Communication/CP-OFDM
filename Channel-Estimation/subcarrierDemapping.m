@@ -1,28 +1,24 @@
 function [outSig] = subcarrierDemapping(sig, pilotSCIdx, varargin)
-    %SUBCARRIERDEMAPPING Extracts data and pilot subcarriers from received
-    %   OFDM symbols.
-    %
-    %   This function performs the inverse of subcarrier mapping by
-    %   removing the null and pilot subcarriers from a received OFDM symbol
-    %   matrix, leaving only the data subcarriers.
-    %
-    %   Inputs:
-    %     - sig         : A matrix of size N-by-M, where each column
-    %                     represents one received OFDM symbol including
-    %                     data, pilot, and null subcarriers.
-    %     - pilotSCIdx  : Indices of the pilot subcarriers.
-    %     - nullSCIdx   : Indices of the null subcarriers (e.g., DC or
-    %                     guard bands). Can be empty if no null subcarriers
-    %                     are used.
-    %
-    %   Outputs:
-    %     - outSig      : Matrix containing the data subcarriers, after
-    %                     removal of null and pilot subcarriers.
-    %
-    %   Note:
-    %     The remaining subcarriers after removing the nulls and pilots are
-    %     considered data. The input indices should match the original
-    %     mapping used in the transmission stage.
+% SUBCARRIERDEMAPPING Extracts data subcarriers from OFDM symbols.
+%
+%   OUTSIG = SUBCARRIERDEMAPPING(SIG, PILOTSCIDX) removes pilot subcarriers
+%   from the OFDM signal SIG, returning only data subcarriers.
+%
+%   - SIG: The OFDM symbols, specified as a vector or an N-by-M matrix.
+%          If SIG is a matrix, each column represents an independent OFDM
+%          symbol.
+%
+%   - PILOTSCIDX: A vector of indices indicating the positions of pilot
+%                 subcarriers.
+%
+%   OUTSIG = SUBCARRIERDEMAPPING(SIG, PILOTSCIDX, NULLSCIDX) also removes
+%   subcarriers at the indices specified in NULLSCIDX, corresponding to
+%   null subcarriers.
+%
+%   Output:
+%
+%   - OUTSIG: A signal containing only data subcarriers, with pilot and
+%             null subcarriers removed.
     
     narginchk(2, 3);
 

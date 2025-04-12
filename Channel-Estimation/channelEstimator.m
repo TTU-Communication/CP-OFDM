@@ -20,8 +20,10 @@ function [channel] = channelEstimator(sig, pilotSCIdx, pilotValue, varargin)
 %   NULLSCIDX is a vector and can be empty if there are no null
 %   subcarriers.
 %
-%   Output: - CHANNEL: The estimated channel response corresponding to the
-%   subcarriers in SIG.
+%   Output:
+%
+%   - CHANNEL: The estimated channel response corresponding to the
+%              subcarriers in SIG.
 
     narginchk(4, 5);
 
@@ -44,6 +46,7 @@ function [channel] = channelEstimator(sig, pilotSCIdx, pilotValue, varargin)
         error("Some of the indices of null subcarriers and pilot subcarriers are the same.");
     end
 
+    % Prepare estimate channel
     pilotValueLen = length(pilotValue);
     dataSCIdx = setdiff(1:fftSize, [nullSCIdx pilotSCIdx]);
     channel = nan(size(newSig));
@@ -52,8 +55,9 @@ function [channel] = channelEstimator(sig, pilotSCIdx, pilotValue, varargin)
         tempPilotValueIdx = (1:length(pilotSCIdx)) + idx - 1;
         tempPilotValue = pilotValue(mod(tempPilotValueIdx - 1, pilotValueLen) + 1);
         tempPilotValue = reshape(tempPilotValue, length(pilotSCIdx), 1);
-        pilotChannel = newSig(pilotSCIdx, idx) ./ tempPilotValue;
+        pilotChannel = newSig(pilotSCIdx, idx) ./ tempPilotValue; % Get channel information from pilot
 
+        % Channel estimation
         F = griddedInterpolant(pilotSCIdx, pilotChannel);
         channel(pilotSCIdx, idx) = pilotChannel;
         channel(dataSCIdx, idx) = F(dataSCIdx);

@@ -1,32 +1,33 @@
 function [outSig] = subcarrierMapping(sig, fftSize, pilotSCIdx, pilotValue, varargin)
-    % SUBCARRIERMAPPING Maps subcarriers for null, pilot, and data signals.
-    %
-    %   This function inserts OFDM-modulated signals onto appropriate
-    %   subcarriers, assigning null, pilot, and data subcarriers based on
-    %   specified indices.
-    %
-    %   Inputs:
-    %     - sig         : An N-by-M matrix, where each column is an
-    %                     independent modulated signals for OFDM symbols.
-    %     - fftSize     : FFT size, i.e., the total number of subcarriers.
-    %     - pilotSCIdx  : Indices of pilot subcarriers.
-    %     - pilotValue  : A vector of pilot values (±1) defined according 
-    %                     to the IEEE 802.11ac/ax standard. The values are
-    %                     applied cyclically across OFDM symbols to enable
-    %                     phase tracking and frequency offset correction.
-    %     - nullSCIdx   : Indices of null subcarriers (e.g., DC subcarrier,
-    %                     guard bands). Can be empty if no null subcarriers
-    %                     are used.
-    %
-    %   Output:
-    %     - outSig      : A fftSize-by-M matrix where each column
-    %                     represents one OFDM symbol with subcarriers
-    %                     mapped appropriately.
-    %
-    %   Note:
-    %     This mapping follows the IEEE 802.11 standard where pilot tones
-    %     are fixed at ±1 and are used for phase tracking and frequency
-    %     offset correction.
+% SUBCARRIERMAPPING Maps subcarriers for null, pilot, and data signals.
+%
+%   OUTSIG = SUBCARRIERMAPPING(SIG, FFTSIZE, PILOTSCIDX, PILOTVALUE) maps
+%   the data signal SIG and pilot values PILOTVALUE to the appropriate
+%   subcarrier indices in an OFDM symbol of size FFTSIZE.
+%
+%   - SIG: The data signal, provided as a vector or an N-by-M matrix.
+%          If SIG is a matrix, each column represents an independent
+%          modulated OFDM symbol.
+%
+%   - FFTSIZE: The total number of subcarriers in the OFDM system.
+%
+%   - PILOTSCIDX: A vector specifying the indices of the pilot subcarriers.
+%
+%   - PILOTVALUE: A vector of known pilot symbols to be inserted at the
+%                 specified pilot subcarrier indices. These values are
+%                 applied cyclically across OFDM symbols to support phase
+%                 tracking and frequency offset correction, in accordance
+%                 with IEEE 802.11ac/ax standards.
+%
+%   OUTSIG = SUBCARRIERMAPPING(SIG, FFTSIZE, PILOTSCIDX, PILOTVALUE,
+%   NULLSCIDX) also allows you to specify null subcarrier positions using
+%   the vector NULLSCIDX. These subcarriers are excluded from data and
+%   pilot mapping.
+%
+%   Output:
+%
+%   - OUTSIG: The resulting OFDM symbol(s) with pilot, data, and null
+%             subcarriers mapped appropriately.
     
     narginchk(4, 5);
 
