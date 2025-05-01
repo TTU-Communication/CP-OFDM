@@ -58,12 +58,14 @@ for idxEbn0 = 1:size(ebn0List, 2)
         inDataBits = randomBits(bitsPerOFDMSymbol, sigPerLoop);
         txModSig = modulator(inDataBits, modOrder);
         txMapSig = subcarrierMapping(txModSig, fftSize, pilotIdx, pilotValue, nullIdx);
+        txMapSig = ifftshift(txMapSig, 1);
         txIFFTSig = sqrt(fftSize) .* ifft(txMapSig, fftSize, 1);
         txOFDMSig = cpAdder(txIFFTSig, cpLen);
 
         % Channel
         sigPower = calcPower(txOFDMSig);
         [fadedSig, channel] = rayleighChannel(txOFDMSig, channelLen, 1/channelLen, fftSize);
+        channel = fftshift(channel, 1);
 
         % Noise
         noise = awgnx(size(fadedSig), snr, sigPower, fadedSig(1));
@@ -73,6 +75,7 @@ for idxEbn0 = 1:size(ebn0List, 2)
         % Rx
         rxNoCPSig = cpRemover(rxNoisySig, cpLen);
         rxFFTSig = 1 / sqrt(fftSize) .* fft(rxNoCPSig, fftSize, 1);
+        rxFFTSig = fftshift(rxFFTSig, 1);
 
         % actual channel
         rxEQSig = equalizer(rxFFTSig, channel);
