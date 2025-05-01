@@ -47,19 +47,18 @@ function [channel] = channelEstimator(sig, pilotSCIdx, pilotValue, varargin)
     end
 
     % Prepare estimate channel
-    pilotValueLen = length(pilotValue);
-    pilotIdxLen = length(pilotSCIdx);
     dataSCIdx = setdiff(1:fftSize, [nullSCIdx pilotSCIdx]);
+
+    % Get channel information from pilot
+    tempPilotValueIdx = (1:length(pilotSCIdx)).' + (1:sigCol) - 1;
+    tempPilotValueIdx = mod(tempPilotValueIdx - 1, length(pilotValue)) + 1;
+
     channel = zeros(size(newSig), 'like', newSig(1));
+    channel(pilotSCIdx, :) = newSig(pilotSCIdx, :) ./ pilotValue(tempPilotValueIdx);
 
     for idx = 1:sigCol
-        tempPilotValue = pilotValue(mod((0:(pilotIdxLen - 1))' + idx - 1, pilotValueLen) + 1);
-        % Get channel information from pilot
-        pilotChannel = newSig(pilotSCIdx, idx) ./ tempPilotValue;
-
         % Channel estimation
-        F = griddedInterpolant(pilotSCIdx, pilotChannel);
-        channel(pilotSCIdx, idx) = pilotChannel;
+        F = griddedInterpolant(pilotSCIdx, channel(pilotSCIdx, idx));
         channel(dataSCIdx, idx) = F(dataSCIdx);
     end
 
