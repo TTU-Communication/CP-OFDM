@@ -53,7 +53,7 @@ for idxEbn0 = 1:size(ebn0List, 2)
         % Tx
         inDataBits = randomBits(bitsPerOFDMSymbol, sigPerLoop);
         txModSig = modulator(inDataBits, modOrder);
-        txIFFTSig = sqrt(fftSize) .* ifft(txModSig, fftSize);
+        txIFFTSig = sqrt(fftSize) .* ifft(txModSig, fftSize, 1);
         txOFDMSig = cpAdder(txIFFTSig, cpLen);
 
         % Channel
@@ -67,7 +67,7 @@ for idxEbn0 = 1:size(ebn0List, 2)
 
         % Rx
         rxNoCPSig = cpRemover(rxNoisySig, cpLen);
-        rxFFTSig = 1 / sqrt(fftSize) .* fft(rxNoCPSig, fftSize);
+        rxFFTSig = 1 / sqrt(fftSize) .* fft(rxNoCPSig, fftSize, 1);
         rxEQSig = equalizer(rxFFTSig, channel);
         outDataBits = demodulator(rxEQSig, modOrder);
 
