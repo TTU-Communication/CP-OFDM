@@ -79,13 +79,13 @@ for idxEbn0 = 1:size(ebn0List, 2)
 
         % actual channel
         rxEQSig = equalizer(rxFFTSig, channel);
-        rxEstDemapSig = subcarrierDemapping(rxEQSig, pilotIdx, nullIdx);
-        outDataBits = demodulator(rxEstDemapSig, modOrder);
+        rxDemapSig = subcarrierDemapping(rxEQSig, pilotIdx, nullIdx);
+        outDataBits = demodulator(rxDemapSig, modOrder);
 
         % estimated channel
         estChannel = channelEstimator(rxFFTSig, pilotIdx, pilotValue, nullIdx);
         rxEstEQSig = equalizer(rxFFTSig, estChannel);
-        rxEstDemapSig = subcarrierDemapping(rxEstEQSig, nullIdx, pilotIdx);
+        rxEstDemapSig = subcarrierDemapping(rxEstEQSig, pilotIdx, nullIdx);
         estOutDataBits = demodulator(rxEstDemapSig, modOrder);
 
         % BER calculate
