@@ -1,5 +1,7 @@
 clc; clear;
 
+addpath(genpath(fullfile(fileparts(mfilename('fullpath')), '..', 'core')));
+
 %% parameter setting
 fftSize = 64;                   % FFT size
 nullIdx = getNullSCIndex(fftSize);  % Null Subcarrier Index

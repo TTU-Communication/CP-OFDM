@@ -1,5 +1,7 @@
 clc; clear;
 
+addpath(genpath(fullfile(fileparts(mfilename('fullpath')), '..', 'core')));
+
 %% parameter setting
 numData = 640;                  % Data subcarrier size
 fftSize = 2048;                 % FFT size
@@ -76,19 +78,18 @@ for idxEbn0 = 1:size(ebn0List, 2)
         % [fadedSig, channel] = rayleighChannel(txOFDMSig, channelLen, 1/channelLen, fftSize);
         fadedSig = txOFDMSig;
         % Channel Companding OFDM
-        compandingSigPower = calcPower(txCmpSig);
-        % [fadedCompandingSig, channelCompanding] = rayleighChannel(txCompandingSig, channelLen, 1/channelLen, fftSize);
-        fadedCompandingSig = txCmpSig;
-
+        cmpSigPower = calcPower(txCmpSig);
+        % [fadedCmpSig, channelCmp] = rayleighChannel(txCmpSig, channelLen, 1/channelLen, fftSize);
+        fadedCmpSig = txCmpSig;
 
         % Noise CP-OFDM
         noise = awgnx(size(fadedSig), snr, sigPower, fadedSig(1));
         noisePower = calcPower(noise);
         rxNoisySig = fadedSig + noise;
         % Noise Companding OFDM
-        noiseCmp = awgnx(size(fadedCompandingSig), snr, compandingSigPower, fadedCompandingSig(1));
+        noiseCmp = awgnx(size(fadedCmpSig), snr, cmpSigPower, fadedCmpSig(1));
         noiseCmpPower = calcPower(noiseCmp);
-        rxNoisyCmpSig = fadedCompandingSig + noiseCmp;
+        rxNoisyCmpSig = fadedCmpSig + noiseCmp;
 
         % Rx CP-OFDM
         rxNoCPSig = cpRemover(rxNoisySig, cpLen);
@@ -101,10 +102,11 @@ for idxEbn0 = 1:size(ebn0List, 2)
         rxDeCmpSig = decompanding(rxNoisyCmpSig, mu);
         rxNoCPCmpSig = cpRemover(rxDeCmpSig, cpLen);
         rxFFTCmpSig = 1 / sqrt(fftSize) .* fft(rxNoCPCmpSig, fftSize, 1);
-        % rxEQCompandingSig = equalizer(rxFFTComapndingSig, channelCompanding);
+        % rxEQCompandingSig = equalizer(rxFFTCmpSig, channelCmp);
         rxEQCmpSig = rxFFTCmpSig;
         rxDemapCmpSig = demapping_subcarrier(rxEQCmpSig, numData);
         outDataBitsCmp = demodulator(rxDemapCmpSig, modOrder);
+        
         % BER calculate
         [~, tempBER(idxRun)] = biterr(inDataBits, outDataBits);
         [~, tempBERCmp(idxRun)] = biterr(inDataBits, outDataBitsCmp);

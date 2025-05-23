@@ -1,5 +1,7 @@
 clc; clear;
 
+addpath(genpath(fullfile(fileparts(mfilename('fullpath')), 'core')));
+
 %% parameter setting
 numData = 32;                   % Data subcarrier size
 fftSize = numData;              % FFT size
