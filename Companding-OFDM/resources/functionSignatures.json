@@ -1,0 +1,16 @@
+{
+    "Equalizer":
+    {
+        "inputs":
+        [
+            {"name":"inSig",       "kind":"required",  "type":["numeric", "2d"]},
+            {"name":"H",           "kind":"required",  "type":["numeric", "2d"]},
+            {"name":"noisePower",  "kind":"ordered",   "type":["numeric", "2d"]},
+            {"name":"sigPower",    "kind":"ordered",   "type":["numeric", "2d"]}
+        ],
+        "outputs":
+        [
+            {"name":"afterEQ",   "type":["double", "2d"]}
+        ]
+    }
+}
