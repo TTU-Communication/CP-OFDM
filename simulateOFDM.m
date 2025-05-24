@@ -3,8 +3,8 @@ clc; clear;
 addpath(genpath(fullfile(fileparts(mfilename('fullpath')), 'core')));
 
 %% parameter setting
-numData = 32;                   % Data subcarrier size
-fftSize = numData;              % FFT size
+fftSize = 32;                   % FFT size
+nullIdx = [];                   % Null Subcarrier Index
 cpLen = fftSize * 1 / 4;        % Cyclic Prefix size
 channelLen = 8;                 % Multipath length in rayleight distribution (no LoS)
 modOrder = 16;                  % The point amount of constellation
@@ -14,6 +14,8 @@ sigPerLoop = 100;               % Every loop test signals
 ebn0List = 0:1:20;              % Energy per bit to noise power spectral density ratio(dB)
 
 %% value depends on parameter
+numData = fftSize - length(nullIdx);    % Data subcarrier size
+dataIdx = setdiff((1:fftSize)', nullIdx);
 bitsPerModSymbol = log2(modOrder);
 bitsPerOFDMSymbol = numData * bitsPerModSymbol;
 
@@ -55,12 +57,14 @@ for idxEbn0 = 1:size(ebn0List, 2)
         % Tx
         inDataBits = randomBits(bitsPerOFDMSymbol, sigPerLoop);
         txModSig = modulator(inDataBits, modOrder);
-        txIFFTSig = sqrt(fftSize) .* ifft(txModSig, fftSize, 1);
+        txMapSig = scMap(txModSig, fftSize, nullIdx);
+        txIFFTSig = sqrt(fftSize) .* ifft(txMapSig, fftSize, 1);
         txOFDMSig = cpAdder(txIFFTSig, cpLen);
 
         % Channel
         sigPower = calcPower(txOFDMSig);
         [fadedSig, channel] = rayleighChannel(txOFDMSig, channelLen, 1/channelLen, fftSize);
+        channel = fftshift(channel, 1);
 
         % Noise
         noise = awgnx(size(fadedSig), snr, sigPower, fadedSig(1));
@@ -70,7 +74,8 @@ for idxEbn0 = 1:size(ebn0List, 2)
         % Rx
         rxNoCPSig = cpRemover(rxNoisySig, cpLen);
         rxFFTSig = 1 / sqrt(fftSize) .* fft(rxNoCPSig, fftSize, 1);
-        rxEQSig = equalizer(rxFFTSig, channel);
+        rxDemapSig = scDemap(rxFFTSig, fftSize, nullIdx);
+        rxEQSig = equalizer(rxDemapSig, channel(dataIdx, :));
         outDataBits = demodulator(rxEQSig, modOrder);
 
         % BER calculate

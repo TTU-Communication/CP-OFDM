@@ -3,8 +3,8 @@ clc; clear;
 addpath(genpath(fullfile(fileparts(mfilename('fullpath')), '..', 'core')));
 
 %% parameter setting
-numData = 640;                  % Data subcarrier size
 fftSize = 2048;                 % FFT size
+nullIdx = [-1024:-321 0 321:1023]' + 1024 + 1;  % Null Subcarrier Index
 cpLen = fftSize * 1 / 8;        % Cyclic Prefix size
 % channelLen = 8;                 % Multipath length in rayleight distribution (no LoS)
 modOrder = 16;                  % The point amount of constellation
@@ -16,6 +16,7 @@ ebn0List = 0:1:20;              % Energy per bit to noise power spectral density
 mu = 1;                         % Companding parameter (mu-law)
 
 %% value depends on parameter
+numData = fftSize - length(nullIdx);                  % Data subcarrier size
 bitsPerModSymbol = log2(modOrder);
 bitsPerOFDMSymbol = numData * bitsPerModSymbol;
 
@@ -68,7 +69,7 @@ for idxEbn0 = 1:size(ebn0List, 2)
         % Tx
         inDataBits = randomBits(bitsPerOFDMSymbol, sigPerLoop);
         txModSig = modulator(inDataBits, modOrder);
-        txMapSig = mapping_subcarrier(txModSig, fftSize);
+        txMapSig = scMap(txModSig, fftSize, nullIdx);
         txIFFTSig = sqrt(fftSize) .* ifft(txMapSig, fftSize, 1);
         txOFDMSig = cpAdder(txIFFTSig, cpLen);
         txCmpSig = companding(txOFDMSig, mu);
@@ -76,10 +77,12 @@ for idxEbn0 = 1:size(ebn0List, 2)
         % Channel CP-OFDM
         sigPower = calcPower(txOFDMSig);
         % [fadedSig, channel] = rayleighChannel(txOFDMSig, channelLen, 1/channelLen, fftSize);
+        % channel = ifftshift(channel, 1);
         fadedSig = txOFDMSig;
         % Channel Companding OFDM
         cmpSigPower = calcPower(txCmpSig);
         % [fadedCmpSig, channelCmp] = rayleighChannel(txCmpSig, channelLen, 1/channelLen, fftSize);
+        % channelCmp = ifftshift(channel, 1);
         fadedCmpSig = txCmpSig;
 
         % Noise CP-OFDM
@@ -94,18 +97,18 @@ for idxEbn0 = 1:size(ebn0List, 2)
         % Rx CP-OFDM
         rxNoCPSig = cpRemover(rxNoisySig, cpLen);
         rxFFTSig = 1 / sqrt(fftSize) .* fft(rxNoCPSig, fftSize, 1);
-        % rxEQSig = equalizer(rxFFTSig, channel);
-        rxEQSig = rxFFTSig;
-        rxDemapSig = demapping_subcarrier(rxEQSig, numData);
-        outDataBits = demodulator(rxDemapSig, modOrder);
+        rxDemapSig = scDemap(rxFFTSig, fftSize, nullIdx);
+        % rxEQSig = equalizer(rxDemapSig, channel(setdiff(1:fftSize, nullIdx), :));
+        rxEQSig = rxDemapSig;
+        outDataBits = demodulator(rxEQSig, modOrder);
         % Rx Companding OFDM
         rxDeCmpSig = decompanding(rxNoisyCmpSig, mu);
         rxNoCPCmpSig = cpRemover(rxDeCmpSig, cpLen);
         rxFFTCmpSig = 1 / sqrt(fftSize) .* fft(rxNoCPCmpSig, fftSize, 1);
-        % rxEQCompandingSig = equalizer(rxFFTCmpSig, channelCmp);
-        rxEQCmpSig = rxFFTCmpSig;
-        rxDemapCmpSig = demapping_subcarrier(rxEQCmpSig, numData);
-        outDataBitsCmp = demodulator(rxDemapCmpSig, modOrder);
+        rxDemapCmpSig = scDemap(rxFFTCmpSig, fftSize, nullIdx);
+        % rxEQCmpSig = equalizer(rxFFTCmpSig, channelCmp(setdiff(1:fftSize, nullIdx), :));
+        rxEQCmpSig = rxDemapCmpSig;
+        outDataBitsCmp = demodulator(rxEQCmpSig, modOrder);
         
         % BER calculate
         [~, tempBER(idxRun)] = biterr(inDataBits, outDataBits);
