@@ -4,8 +4,8 @@ addpath(genpath(fullfile(fileparts(mfilename('fullpath')), '..', 'core')));
 
 %% parameter setting
 fftSize = 64;                   % FFT size
-nullIdx = getNullSCIndex(fftSize);  % Null Subcarrier Index
-[pilotIdx, pilotValue] = getPilotSCIndexAndValue(fftSize);  % Pilot Subcarrier Index & Value
+nullIdx = getNullIdx(fftSize);  % Null Subcarrier Index
+[pilotIdx, pilotValue] = getPilotIdxAndVal(fftSize);    % Pilot Subcarrier Index & Value
 cpLen = fftSize * 1 / 4;        % Cyclic Prefix size
 channelLen = 8;                 % Multipath length in rayleight distribution (no LoS)
 modOrder = 16;                  % The point amount of constellation
@@ -18,6 +18,7 @@ ebn0List = 0:1:20;              % Energy per bit to noise power spectral density
 numData = fftSize - length(nullIdx) - length(pilotIdx);     % Data subcarrier size
 bitsPerModSymbol = log2(modOrder);
 bitsPerOFDMSymbol = numData * bitsPerModSymbol;
+pilotValues = repmat(pilotValue, [1 sigPerLoop]);
 
 %% package 
 randomBits = @(r, c) randi([0 1], r, c);
@@ -59,8 +60,7 @@ for idxEbn0 = 1:size(ebn0List, 2)
         % Tx
         inDataBits = randomBits(bitsPerOFDMSymbol, sigPerLoop);
         txModSig = modulator(inDataBits, modOrder);
-        txMapSig = subcarrierMapping(txModSig, fftSize, pilotIdx, pilotValue, nullIdx);
-        txMapSig = ifftshift(txMapSig, 1);
+        txMapSig = scMap(txModSig, fftSize, nullIdx, pilotIdx, pilotValues);
         txIFFTSig = sqrt(fftSize) .* ifft(txMapSig, fftSize, 1);
         txOFDMSig = cpAdder(txIFFTSig, cpLen);
 
@@ -77,18 +77,17 @@ for idxEbn0 = 1:size(ebn0List, 2)
         % Rx
         rxNoCPSig = cpRemover(rxNoisySig, cpLen);
         rxFFTSig = 1 / sqrt(fftSize) .* fft(rxNoCPSig, fftSize, 1);
-        rxFFTSig = fftshift(rxFFTSig, 1);
 
         % actual channel
-        rxEQSig = equalizer(rxFFTSig, channel);
-        rxDemapSig = subcarrierDemapping(rxEQSig, pilotIdx, nullIdx);
-        outDataBits = demodulator(rxDemapSig, modOrder);
+        rxDemapSig = scDemap(rxFFTSig, fftSize, nullIdx, pilotIdx);
+        rxEQSig = equalizer(rxDemapSig, channel(setdiff(1:fftSize, [pilotIdx; nullIdx]), :));
+        outDataBits = demodulator(rxEQSig, modOrder);
 
         % estimated channel
-        estChannel = channelEstimator(rxFFTSig, pilotIdx, pilotValue, nullIdx);
-        rxEstEQSig = equalizer(rxFFTSig, estChannel);
-        rxEstDemapSig = subcarrierDemapping(rxEstEQSig, pilotIdx, nullIdx);
-        estOutDataBits = demodulator(rxEstDemapSig, modOrder);
+        [rxEstDemapSig, rxPilotSig] = scDemap(rxFFTSig, fftSize, nullIdx, pilotIdx);
+        estChannel = channelEstimator(rxPilotSig ./ pilotValue, fftSize, nullIdx, pilotIdx);
+        rxEstEQSig = equalizer(rxEstDemapSig, estChannel);
+        estOutDataBits = demodulator(rxEstEQSig, modOrder);
 
         % BER calculate
         [~, tempBER(idxRun)] = biterr(inDataBits, outDataBits);

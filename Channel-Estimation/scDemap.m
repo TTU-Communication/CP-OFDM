@@ -1,60 +1,75 @@
-function [hEst] = channelEstimator(h, nfft, nullIdx, pilotIdx)
-% CHANNELESTIMATOR Estimate the channel response from pilot subcarriers
+function varargout = scDemap(x, nfft, varargin)
+% SUBCARRIERDEMAPPING Extracts data subcarriers from OFDM symbols.
 %
-%   CHANNEL = CHANNELESTIMATOR(SIG, PILOTSCIDX, PILOTVALUE) estimates the
-%   channel response using the received signal SIG, the indices of pilot
-%   subcarriers PILOTSCIDX, and their corresponding transmitted values
-%   PILOTVALUE.
+%   OUTSIG = SUBCARRIERDEMAPPING(SIG, PILOTSCIDX) removes pilot subcarriers
+%   from the OFDM signal SIG, returning only data subcarriers.
 %
-%   - SIG: The received signal, either as a vector or a 2D matrix.
-%          If SIG is a matrix, each column is treated as an independent
-%          signal.
+%   - SIG: The OFDM symbols, specified as a vector or an N-by-M matrix.
+%          If SIG is a matrix, each column represents an independent OFDM
+%          symbol.
 %
-%   - PILOTSCIDX: A vector containing the indices of the pilot subcarriers.
+%   - PILOTSCIDX: A vector of indices indicating the positions of pilot
+%                 subcarriers.
 %
-%   - PILOTVALUE: A vector containing the known transmitted values at the
-%                 pilot subcarriers.
-%
-%   CHANNEL = CHANNELESTIMATOR(SIG, PILOTSCIDX, PILOTVALUE, NULLSCIDX)
-%   allows you to specify indices of null subcarriers using NULLSCIDX.
-%   NULLSCIDX is a vector and can be empty if there are no null
-%   subcarriers.
+%   OUTSIG = SUBCARRIERDEMAPPING(SIG, PILOTSCIDX, NULLSCIDX) also removes
+%   subcarriers at the indices specified in NULLSCIDX, corresponding to
+%   null subcarriers.
 %
 %   Output:
 %
-%   - CHANNEL: The estimated channel response corresponding to the
-%              subcarriers in SIG.
+%   - OUTSIG: A signal containing only data subcarriers, with pilot and
+%             null subcarriers removed.
+    
+    narginchk(3, 4);
 
-    narginchk(4, 4);
+    [prmStr, dataIdx] = setup(x, nfft, varargin{:});
 
-    [prmStr, dataIdx] = setup(h, nfft, nullIdx, pilotIdx);
+    preShiftx = fftshift(x, 1);
 
-    hEst = zeros([length(dataIdx) prmStr.NumSymbols], 'like', h(1));
+    varargout{1} = preShiftx(dataIdx, :);
 
-    for idx = 1:prmStr.NumSymbols
-        % Channel estimation
-        F = griddedInterpolant(prmStr.PilotIndices, h(:, idx));
-        hEst(:, idx) = F(dataIdx);
+    if ~isempty(prmStr.PilotIndices)
+        varargout{2} = preShiftx(prmStr.PilotIndices, :);
+    else
+        nargoutchk(0, 1);
     end
-
+    
 end
 
-function [prmStr, pDataIdx] = setup(h, nfft, NullIndices, PilotIndices)
+function [prmStr, pDataIdx] = setup(x, nfft, varargin)
 
-    validateattributes(h, {'numeric'}, ...
-        {'2d', 'nonempty', 'finite'}, mfilename, 'H', 1);
+    validateattributes(x, {'numeric'}, ...
+        {'2d', 'nonempty', 'finite'}, mfilename, 'X', 1);
 
-    numSym = size(h, 2);
+    [~, numSym] = size(x);
 
     validateattributes(nfft, {'numeric'}, ...
         {'real', 'integer', 'scalar', 'positive', 'nonempty', 'finite'}, ...
         mfilename, 'NFFT', 2);
 
+    if isempty(varargin)
+        NullIndices = [];
+        PilotIndices = [];
+        hasPilots = false;
+
+    elseif length(varargin) == 1
+        NullIndices = varargin{1};
+        PilotIndices = [];
+        hasPilots = false;
+
+    elseif length(varargin) == 2
+        NullIndices = varargin{1};
+        PilotIndices = varargin{2};
+        hasPilots = true;
+
+    end
+
     prmStr = struct(...
         "FFTLength", nfft, ...
         "NumSymbols", numSym, ...
         "NullIndices", NullIndices, ...
-        "PilotIndices", PilotIndices);
+        "PilotIndices", PilotIndices, ...
+        "hasPilots", hasPilots);
 
     if ~isempty(prmStr.NullIndices)
         checkNulls(prmStr);
