@@ -27,10 +27,10 @@ function [pilotIdx, pilotValue] = getPilotIdxAndVal(nfft)
             pilotValueIdx = 1:8;
         case 512 % IEEE 802.11ax
             pilotIdx = [-238 -212 -170 -144 -104 -78 -36 -10];
-            pilotValueIdx = 1:8;
+            pilotValueIdx = mod((1:16) - 1, 8) + 1;
         case 1024 % IEEE 802.11ax
             pilotIdx = [-468 -400 -334 -266 -226 -158 -92 -24];
-            pilotValueIdx = 1:8;
+            pilotValueIdx = mod((1:16) - 1, 8) + 1;
         otherwise
             error("FFT size is not support: %d", nfft);
     end
