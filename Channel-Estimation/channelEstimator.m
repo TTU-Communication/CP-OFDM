@@ -1,29 +1,26 @@
 function [hEst] = channelEstimator(h, nfft, nullIdx, pilotIdx)
 % CHANNELESTIMATOR Estimate the channel response from pilot subcarriers
 %
-%   CHANNEL = CHANNELESTIMATOR(SIG, PILOTSCIDX, PILOTVALUE) estimates the
-%   channel response using the received signal SIG, the indices of pilot
-%   subcarriers PILOTSCIDX, and their corresponding transmitted values
-%   PILOTVALUE.
+%   HEST = CHANNELESTIMATOR(H, NFFT, NULLIDX, PILOTIDX) interpolates the
+%   channel response using the channel response H estimated from pilot
+%   subcarriers, the size of FFT NFFT, the indices of null subcarriers
+%   NULLIDX, and the indices of pilot subcarriers PILOTIDX.
 %
-%   - SIG: The received signal, either as a vector or a 2D matrix.
-%          If SIG is a matrix, each column is treated as an independent
-%          signal.
+%   - H: The estimated channel response at the pilot subcarriers positions
+%        specified in PILOTIDX.
 %
-%   - PILOTSCIDX: A vector containing the indices of the pilot subcarriers.
+%   - NFFT: The total number of subcarriers in the OFDM system.
 %
-%   - PILOTVALUE: A vector containing the known transmitted values at the
-%                 pilot subcarriers.
+%   - NULLIDX: A column vector containg the indices of the null
+%              subcarriers, which are excluded from channel estimation.
 %
-%   CHANNEL = CHANNELESTIMATOR(SIG, PILOTSCIDX, PILOTVALUE, NULLSCIDX)
-%   allows you to specify indices of null subcarriers using NULLSCIDX.
-%   NULLSCIDX is a vector and can be empty if there are no null
-%   subcarriers.
+%   - PILOTIDX: A column vector containing the indices of the pilot
+%                 subcarriers.
 %
 %   Output:
 %
-%   - CHANNEL: The estimated channel response corresponding to the
-%              subcarriers in SIG.
+%   - HEST: The estimated channel response corresponding to the FFT indices
+%           excludes NULLIDX and PILOTIDX.
 
     narginchk(4, 4);
 

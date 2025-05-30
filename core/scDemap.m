@@ -1,25 +1,32 @@
 function varargout = scDemap(x, nfft, varargin)
-% SUBCARRIERDEMAPPING Extracts data subcarriers from OFDM symbols.
+% SCDEMAP Extracts data and pilot subcarriers from OFDM symbols.
 %
-%   OUTSIG = SUBCARRIERDEMAPPING(SIG, PILOTSCIDX) removes pilot subcarriers
-%   from the OFDM signal SIG, returning only data subcarriers.
+%   Y = SCDEMAP(X, NFFT) extracts all subcarriers from the input OFDM
+%   signal X, assuming no null or pilot subcarriers are present.
 %
-%   - SIG: The OFDM symbols, specified as a vector or an N-by-M matrix.
-%          If SIG is a matrix, each column represents an independent OFDM
-%          symbol.
+%   - X: The OFDM symbols, specified as a vector or an NFFT-by-M matrix.
+%        If X is a matrix, each column represents an independent OFDM
+%        symbol.
 %
-%   - PILOTSCIDX: A vector of indices indicating the positions of pilot
-%                 subcarriers.
+%   - NFFT: The total number of subcarriers in the OFDM system.
 %
-%   OUTSIG = SUBCARRIERDEMAPPING(SIG, PILOTSCIDX, NULLSCIDX) also removes
-%   subcarriers at the indices specified in NULLSCIDX, corresponding to
-%   null subcarriers.
+%   Y = SCDEMAP(X, NFFT, NULLIDX) removes subcarriers at the indices
+%   specified in NULLIDX, corresponding to null subcarriers.
+%
+%   Y = SCDEMAP(X, NFFT, NULLIDX, PILOTIDX) further removes pilot
+%   subcarriers at the indices specified in PILOTIDX.
+%
+%   [Y, PILOTS] = SCDEMAP(X, NFFT, NULLIDX, PILOTIDX) additionally returns
+%   the values extracted from the pilot subcarrier positions.
 %
 %   Output:
 %
-%   - OUTSIG: A signal containing only data subcarriers, with pilot and
-%             null subcarriers removed.
-    
+%   - Y: The resulting signal containing only data subcarriers, with null
+%        and pilot subcarriers removed.
+%
+%   - PILOTS: A matrix or vector containing the pilot subcarrier values
+%             extracted from X at the positions specified by PILOTIDX.
+
     narginchk(3, 4);
 
     [prmStr, dataIdx] = setup(x, nfft, varargin{:});

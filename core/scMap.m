@@ -1,33 +1,26 @@
 function y = scMap(x, nfft, varargin)
-% SUBCARRIERMAPPING Maps subcarriers for null, pilot, and data signals.
+% SCMAP Maps subcarriers for data, null, and pilot signals in OFDM.
 %
-%   OUTSIG = SUBCARRIERMAPPING(SIG, FFTSIZE, PILOTSCIDX, PILOTVALUE) maps
-%   the data signal SIG and pilot values PILOTVALUE to the appropriate
-%   subcarrier indices in an OFDM symbol of size FFTSIZE.
+%   Y = SCMAP(X, NFFT) maps the data signal X to the available subcarriers
+%   in an OFDM symbol of size NFFT.
 %
-%   - SIG: The data signal, provided as a vector or an N-by-M matrix.
-%          If SIG is a matrix, each column represents an independent
-%          modulated OFDM symbol.
+%   - X: The data signal, specified as a vector or an N-by-M matrix.
+%        If X is a matrix, each column represents an independent modulated
+%        OFDM symbol.
 %
-%   - FFTSIZE: The total number of subcarriers in the OFDM system.
+%   - NFFT: The total number of subcarriers in the OFDM system.
 %
-%   - PILOTSCIDX: A vector specifying the indices of the pilot subcarriers.
+%   Y = SCMAP(X, NFFT, NULLIDX) excludes subcarriers at positions specified
+%   in NULLIDX from mapping. NULLIDX is a vector of null subcarrier
+%   indices.
 %
-%   - PILOTVALUE: A vector of known pilot symbols to be inserted at the
-%                 specified pilot subcarrier indices. These values are
-%                 applied cyclically across OFDM symbols to support phase
-%                 tracking and frequency offset correction, in accordance
-%                 with IEEE 802.11ac/ax standards.
-%
-%   OUTSIG = SUBCARRIERMAPPING(SIG, FFTSIZE, PILOTSCIDX, PILOTVALUE,
-%   NULLSCIDX) also allows you to specify null subcarrier positions using
-%   the vector NULLSCIDX. These subcarriers are excluded from data and
-%   pilot mapping.
+%   Y = SCMAP(X, NFFT, NULLIDX, PILOTIDX, PILOTS) additionally inserts
+%   pilot values PILOTS at the subcarrier positions specified by PILOTIDX.
 %
 %   Output:
 %
-%   - OUTSIG: The resulting OFDM symbol(s) with pilot, data, and null
-%             subcarriers mapped appropriately.
+%   - Y: The resulting OFDM symbols with data, null, and pilot subcarriers
+%        mapped appropriately.
     
     narginchk(3, 5);
 
