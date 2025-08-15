@@ -1,36 +1,35 @@
-function [outSig] = equalizer(inSig, H, varargin)
+function [outSig] = equalizer(inSig, H, noisePower, sigPower)
     
-    narginchk(2, 4);
-
-    validateattributes(inSig, {'double'}, {'2d', 'nonnan', 'finite', 'nonempty'}, ...
-                        mfilename, 'Signal', 1);
-    validateattributes(H, {'double'}, {'2d', 'nonnan', 'finite', 'nonempty'}, ...
-                        mfilename, 'Channel', 2);
-
-    if nargin == 2
-        eqMode = 1;   % Zero-Forcing
-    elseif nargin == 3
-        eqMode = 2;   % MMSE
-        noisePower = varargin{1};
-        validateattributes(noisePower, {'double'}, ...
-            {'2d', 'nonnan', 'finite', 'nonempty'}, mfilename, 'Noise_power');
-        sigPower = 1;
-    elseif nargin == 4
-        eqMode = 2;   % MMSE
-        noisePower = varargin{1};
-        validateattributes(noisePower, {'double'}, ...
-            {'2d', 'nonnan', 'finite', 'nonempty'}, mfilename, 'Noise_power');
-        sigPower = varargin{2};
-        validateattributes(sigPower, {'double'}, ...
-            {'2d', 'nonnan', 'finite', 'nonempty'}, mfilename, 'Signal_power');
+    arguments
+        inSig (:,:,:) {mustBeFinite, mustBeNonempty}
+        H (:,:,:,:) {mustBeFinite, mustBeNonempty}
+        noisePower (1,:,:) {mustBeFinite, mustBeNonempty} = 0
+        sigPower (1,:,:) {mustBeFinite, mustBeNonempty} = 1
     end
 
-    switch (eqMode)
-        case 1  % Zero-Forcing
-            eq = 1 ./ H;
-        case 2  % MMSE
-            eq = conj(H) .* (H .* conj(H) + (noisePower ./ sigPower)) .^ -1;
+    [sigSample, sigBatch, nRX] = size(inSig);
+    nTX = size(H, 4);
+
+    % change dimension from [Nsp Ns Nrx] to [Nrx 1 Nsp Ns]
+    inSigPage = reshape(permute(inSig, [3 1 2]), [nRX 1 sigSample  sigBatch]);
+    % change dimension from [Nsp Ns Nrx Ntx] to [Nrx Ntx Nsp Ns]
+    HPage = permute(H, [3 4 1 2]);
+    if noisePower(1) ~= 0
+        noisePower = permute(repmat(noisePower, [sigSample 1 1]), [3 1 2]);
+        if ndims(noisePower) == 3
+            noisePower = eye(nRX) .* reshape(noisePower, [nRX 1 sigSample sigBatch]);
+        end
+    end
+    if sigPower(1) ~= 1
+        sigPower = permute(repmat(sigPower, [sigSample 1 1]), [3 1 2]);
+        if ndims(sigPower) == 3
+            sigPower = eye(nRX) .* reshape(sigPower,[nRX 1 sigSample sigBatch]);
+        end
     end
 
-    outSig = eq .* inSig;
+    eq = pagemrdivide(pagectranspose(HPage), pagemtimes(HPage, 'none', HPage, 'ctranspose') ...
+            + (noisePower ./ sigPower));
+
+    outSigPage = pagemtimes(eq, inSigPage);
+    outSig = permute(reshape(outSigPage, [nTX sigSample sigBatch]), [2 3 1]);
 end
