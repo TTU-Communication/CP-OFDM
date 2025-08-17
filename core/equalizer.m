@@ -26,6 +26,7 @@ function [outSig] = equalizer(inSig, H, noisePower, sigPower)
         noiseVarInv = pageinv(noiseVar);
     else
         % set to identity matrix for each signals
+        noiseVar = 0;
         noiseVarInv = repmat(eye(nRX), [1 1 sigSample sigBatch]);
     end
 
@@ -38,10 +39,11 @@ function [outSig] = equalizer(inSig, H, noisePower, sigPower)
         end
         % calculate the inverse matrix
         sigVarInv = pageinv(sigVar);
-    elseif noiseVar(1) ~= 0
+    elseif noisePower(1) ~= 0
         % set to identity matrix for each signals if noisePower is provided
         sigVarInv = repmat(eye(nTX), [1 1 sigSample sigBatch]);
     else
+        sigVar = 1;
         sigVarInv = 0;
     end
 
