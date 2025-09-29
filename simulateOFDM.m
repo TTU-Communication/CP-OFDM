@@ -9,6 +9,8 @@ cpLen = fftSize * 1 / 4;        % Cyclic Prefix size
 channelLen = 8;                 % Multipath length in rayleight distribution (no LoS)
 modOrder = 16;                  % The point amount of constellation
 modType = 'QAM';                % Modulation (Avaliable with 'PSK', 'QAM')
+nTX = 2;
+nRX = 2;
 baseSigCount = 10000;           % testing signal numbers (will multiply a factor)
 sigPerLoop = 100;               % Every loop test signals
 ebn0List = 0:1:20;              % Energy per bit to noise power spectral density ratio(dB)
@@ -20,8 +22,8 @@ bitsPerModSymbol = log2(modOrder);
 bitsPerOFDMSymbol = numData * bitsPerModSymbol;
 
 %% package 
-randomBits = @(r, c) randi([0 1], r, c);
-calcPower = @(sig) sum(abs(sig) .^ 2) / size(sig, 1);
+randomBits = @(sigSize) randi([0 1], sigSize);
+calcPower = @(sig) sum(sum(abs(sig) .^ 2) / size(sig, 1), 3);
 switch (lower(modType))
     case 'psk'
         modulator = @(input, M) pskmod(input, M, InputType="bit");
@@ -35,8 +37,8 @@ switch (lower(modType))
         error('OFDMMain:invalidModulation', ...
             'The modulation mode must be one of PSK or QAM.');
 end
-cpAdder = @(sig, len) [sig(end-len+1:end, :); sig];
-cpRemover = @(sig, len) sig(len+1:end, :);
+cpAdder = @(sig, len) sig([end-len+1:end, 1:end], :, :);
+cpRemover = @(sig, len) sig(len+1:end, :, :);
 
 %% data storage
 ber = zeros(1, length(ebn0List));
@@ -55,7 +57,7 @@ for idxEbn0 = 1:size(ebn0List, 2)
 
     parfor idxRun = 1:(totalSigCount / sigPerLoop)
         % Tx
-        inDataBits = randomBits(bitsPerOFDMSymbol, sigPerLoop);
+        inDataBits = randomBits([bitsPerOFDMSymbol sigPerLoop nTX]);
         txModSig = modulator(inDataBits, modOrder);
         txMapSig = scMap(txModSig, fftSize, nullIdx);
         txIFFTSig = sqrt(fftSize) .* ifft(txMapSig, fftSize, 1);
@@ -63,23 +65,22 @@ for idxEbn0 = 1:size(ebn0List, 2)
 
         % Channel
         sigPower = calcPower(txOFDMSig);
-        [fadedSig, channel] = rayleighChannel(txOFDMSig, channelLen, 1/channelLen, fftSize);
+        [fadedSig, channel] = rayleighChannel(txOFDMSig, channelLen, 1/channelLen, fftSize, nRX);
         channel = fftshift(channel, 1);
 
         % Noise
-        noise = awgnx(size(fadedSig), snr, sigPower, fadedSig(1));
-        noisePower = calcPower(noise);
+        [noise, noisePower] = awgnx(size(fadedSig), snr, sigPower, fadedSig(1));
         rxNoisySig = fadedSig + noise;
 
         % Rx
         rxNoCPSig = cpRemover(rxNoisySig, cpLen);
         rxFFTSig = 1 / sqrt(fftSize) .* fft(rxNoCPSig, fftSize, 1);
         rxDemapSig = scDemap(rxFFTSig, fftSize, nullIdx);
-        rxEQSig = equalizer(rxDemapSig, channel(dataIdx, :));
+        rxEQSig = equalizer(rxDemapSig, channel(dataIdx, :, :, :));
         outDataBits = demodulator(rxEQSig, modOrder);
 
         % BER calculate
-        [~, tempBER(idxRun)] = biterr(inDataBits, outDataBits);
+        [~, tempBER(idxRun)] = biterr(inDataBits(:), outDataBits(:));
 
     end
 

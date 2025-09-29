@@ -33,10 +33,10 @@ function varargout = scDemap(x, nfft, varargin)
 
     preShiftx = fftshift(x, 1);
 
-    varargout{1} = preShiftx(dataIdx, :);
+    varargout{1} = preShiftx(dataIdx, :, :);
 
     if ~isempty(prmStr.PilotIndices)
-        varargout{2} = preShiftx(prmStr.PilotIndices, :);
+        varargout{2} = preShiftx(prmStr.PilotIndices, :, :);
     else
         nargoutchk(0, 1);
     end
@@ -46,9 +46,9 @@ end
 function [prmStr, pDataIdx] = setup(x, nfft, varargin)
 
     validateattributes(x, {'numeric'}, ...
-        {'2d', 'nonempty', 'finite'}, mfilename, 'X', 1);
+        {'3d', 'nonempty', 'finite'}, mfilename, 'X', 1);
 
-    [~, numSym] = size(x);
+    [~, numSym, numRX] = size(x);
 
     validateattributes(nfft, {'numeric'}, ...
         {'real', 'integer', 'scalar', 'positive', 'nonempty', 'finite'}, ...
@@ -74,6 +74,7 @@ function [prmStr, pDataIdx] = setup(x, nfft, varargin)
     prmStr = struct(...
         "FFTLength", nfft, ...
         "NumSymbols", numSym, ...
+        "numRXs", numRX, ...
         "NullIndices", NullIndices, ...
         "PilotIndices", PilotIndices, ...
         "hasPilots", hasPilots);

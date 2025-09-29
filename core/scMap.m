@@ -28,6 +28,7 @@ function y = scMap(x, nfft, varargin)
 
     FFTLen = prmStr.FFTLength;
     numSym = prmStr.NumSymbols;
+    numTX = prmStr.NumTXs;
 
     if isempty(prmStr.Pilots)
         typeIn = cast(1i, "like", x);
@@ -35,8 +36,8 @@ function y = scMap(x, nfft, varargin)
         typeIn = cast(1i, "like", prmStr.Pilots(1) + x(1));
     end
 
-    y = zeros(FFTLen, numSym, 'like', typeIn);
-    y(dataIdx, :) = x;
+    y = zeros([FFTLen numSym numTX], 'like', typeIn);
+    y(dataIdx, :, :) = x;
     if ~isempty(prmStr.PilotIndices) && ~isempty(prmStr.Pilots)
         y(prmStr.PilotIndices, :) = prmStr.Pilots;
     end
@@ -48,9 +49,9 @@ end
 function [prmStr, pDataIdx] = setup(x, nfft, varargin)
 
     validateattributes(x, {'numeric'}, ...
-        {'2d', 'nonempty', 'finite'}, mfilename, 'X', 1);
+        {'3d', 'nonempty', 'finite'}, mfilename, 'X', 1);
 
-    [numST, numSym] = size(x);
+    [numST, numSym, numTX] = size(x);
 
     validateattributes(nfft, {'numeric'}, ...
         {'real', 'integer', 'scalar', 'positive', 'nonempty', 'finite'}, ...
@@ -79,6 +80,7 @@ function [prmStr, pDataIdx] = setup(x, nfft, varargin)
     prmStr = struct(...
         "FFTLength", nfft, ...
         "NumSymbols", numSym, ...
+        "NumTXs", numTX, ...
         "NullIndices", NullIndices, ...
         "PilotIndices", PilotIndices, ...
         "Pilots", Pilots);
