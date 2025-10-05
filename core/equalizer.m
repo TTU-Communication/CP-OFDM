@@ -1,10 +1,10 @@
 function [outSig] = equalizer(inSig, H, noisePower, sigPower)
     
     arguments
-        inSig (:,:,:) {mustBeFinite, mustBeNonempty}
-        H (:,:,:,:) {mustBeFinite, mustBeNonempty}
-        noisePower (1,:,:) {mustBeFinite, mustBeNonempty} = 0
-        sigPower (1,:,:) {mustBeFinite, mustBeNonempty} = 1
+        inSig (:,:,:) {mustBeArrayOrGPU, mustBeFinite, mustBeNonempty}
+        H (:,:,:,:) {mustBeArrayOrGPU, mustBeFinite, mustBeNonempty}
+        noisePower (1,:,:) {mustBeArrayOrGPU, mustBeFinite, mustBeNonempty} = 0
+        sigPower (1,:,:) {mustBeArrayOrGPU, mustBeFinite, mustBeNonempty} = 1
     end
 
     [sigSample, sigBatch, nRX] = size(inSig);

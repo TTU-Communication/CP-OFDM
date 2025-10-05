@@ -1,7 +1,7 @@
 function [fadedSig, H] = rayleighChannel(inSig, nTap, tapPower, fftSize, nRX)
 
     arguments
-        inSig (:,:,:) {mustBeFinite, mustBeNonempty}
+        inSig (:,:,:) {mustBeArrayOrGPU, mustBeFinite, mustBeNonempty}
         nTap (1,1) double {mustBePositive, mustBeInteger}
         tapPower (1,1) double {mustBeNonnegative, mustBeReal, mustBeFinite}
         fftSize (1,1) double {mustBePositive, mustBeInteger}
