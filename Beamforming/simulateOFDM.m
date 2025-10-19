@@ -15,10 +15,11 @@ baseSigCount = 10000;           % testing signal numbers (will multiply a factor
 sigPerLoop = 100;               % Every loop test signals
 ebn0List = 0:1:20;              % Energy per bit to noise power spectral density ratio(dB)
 
-txPower = 8;
-txGain = -8;
+txPower = 20;
+txGain = 9;
 rxGain = 8;
 rxTemp = 290; % temperature in K
+pathloss = 100; % dB
 
 %% value depends on parameter
 numData = fftSize - length(nullIdx);    % Data subcarrier size
@@ -77,15 +78,18 @@ for idxEbn0 = 1:size(ebn0List, 2)
         sigPower = calcPower(txSig);
         [fadedSig, channel] = rayleighChannel(txSig, channelLen, 1/channelLen, fftSize, nRX);
         channel = fftshift(channel, 1);
+        fadedSigLoss = fadedSig ./ sqrt(db2pow(pathloss));
 
         % Noise
-        [noise, noisePower] = awgnx(size(fadedSig), snr, sigPower, fadedSig(1));
-        rxNoisySig = fadedSig + noise;
+        [noise, noisePower] = awgnx(size(fadedSig), snr, sigPower ./ db2pow(pathloss), fadedSig(1));
+        rxNoisySig = fadedSigLoss + noise;
 
         % Rx
         rxSig = receiver(rxNoisySig);
-        channelEff = receiver(channel);
-        rxNoCPSig = cpRemover(rxSig, cpLen);
+        % channelEff = receiver(channel);
+        channelEff = channel;
+        rxAGCSig = agc(rxSig, (fftSize + cpLen) * sigPerLoop, 1);
+        rxNoCPSig = cpRemover(rxAGCSig, cpLen);
         rxFFTSig = 1 / sqrt(fftSize) .* fft(rxNoCPSig, fftSize, 1);
         rxDemapSig = scDemap(rxFFTSig, fftSize, nullIdx);
         rxEQSig = equalizer(rxDemapSig, channelEff(dataIdx, :, :, :));
