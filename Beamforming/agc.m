@@ -1,4 +1,4 @@
-function [y] = agc(x, frameLen, targetRMS, maxGain_dB, minGain_dB, mode)
+function [y, gain] = agc(x, frameLen, targetRMS, maxGain_dB, minGain_dB, mode)
 %A Summary of this function goes here
 %   Detailed explanation goes here
     arguments (Input)
@@ -27,6 +27,7 @@ function [y] = agc(x, frameLen, targetRMS, maxGain_dB, minGain_dB, mode)
     rmsFrame = sqrt(Pr);
     g = targetRMS ./ (rmsFrame);
     g = max(min(g, 10 .^ (maxGain_dB / 20)), 10 .^ (minGain_dB / 20));
+    gain = g;
 
     G = repmat(g, [frameLen 1 Nrx]);
     Yf = G .* Xf;

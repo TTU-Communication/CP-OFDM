@@ -45,10 +45,9 @@ switch (lower(modType))
 end
 cpAdder = @(sig, len) sig([end-len+1:end, 1:end], :, :);
 cpRemover = @(sig, len) sig(len+1:end, :, :);
+PA = @(sig, peakW, gainDB) sig .* peakW .* (10 .^ (gainDB / 10));
 
 %% system objects
-transmitter = phased.Transmitter("PeakPower", txPower, "Gain", txGain);
-receiver = phased.ReceiverPreamp("Gain", rxGain, "ReferenceTemperature", rxTemp);
 
 %% data storage
 ber = zeros(1, length(ebn0List));
@@ -72,7 +71,7 @@ for idxEbn0 = 1:size(ebn0List, 2)
         txMapSig = scMap(txModSig, fftSize, nullIdx);
         txIFFTSig = sqrt(fftSize) .* ifft(txMapSig, fftSize, 1);
         txOFDMSig = cpAdder(txIFFTSig, cpLen);
-        txSig = transmitter(txOFDMSig);
+        txSig = PA(txOFDMSig, txPower, txGain);
 
         % Channel
         sigPower = calcPower(txSig);
@@ -85,14 +84,17 @@ for idxEbn0 = 1:size(ebn0List, 2)
         rxNoisySig = fadedSigLoss + noise;
 
         % Rx
-        rxSig = receiver(rxNoisySig);
-        % channelEff = receiver(channel);
-        channelEff = channel;
-        rxAGCSig = agc(rxSig, (fftSize + cpLen) * sigPerLoop, 1);
+        rxSig = PA(rxNoisySig, 1, rxGain);
+        [rxAGCSig, agcGain] = agc(rxSig, (fftSize + cpLen) * sigPerLoop, 1);
+        % channelEq = PA(channel, txPower, txGain);
+        % channelEq = reshape(channelEq ./ sqrt(db2pow(pathloss)), fftSize * sigPerLoop, 1) .* agcGain;
+        % channelEq = reshape(channelEq, fftSize, sigPerLoop);
+        % channelEq = PA(channelEq, 1, rxGain);
+        channelEq = channel;
         rxNoCPSig = cpRemover(rxAGCSig, cpLen);
         rxFFTSig = 1 / sqrt(fftSize) .* fft(rxNoCPSig, fftSize, 1);
         rxDemapSig = scDemap(rxFFTSig, fftSize, nullIdx);
-        rxEQSig = equalizer(rxDemapSig, channelEff(dataIdx, :, :, :));
+        rxEQSig = equalizer(rxDemapSig, channelEq(dataIdx, :, :, :));
         outDataBits = demodulator(rxEQSig, modOrder);
 
         % BER calculate
