@@ -15,11 +15,11 @@ baseSigCount = 10000;           % testing signal numbers (will multiply a factor
 sigPerLoop = 100;               % Every loop test signals
 ebn0List = 0:1:20;              % Energy per bit to noise power spectral density ratio(dB)
 
-txPower = 20;
-txGain = 9;
-rxGain = 8;
+txPmax_dBm = 30;
+txDecline_dB = 8;
+rxGain_dB = 8;
 rxTemp = 290; % temperature in K
-pathloss = 100; % dB
+pathloss = 30; % dB
 
 %% value depends on parameter
 numData = fftSize - length(nullIdx);    % Data subcarrier size
@@ -45,7 +45,8 @@ switch (lower(modType))
 end
 cpAdder = @(sig, len) sig([end-len+1:end, 1:end], :, :);
 cpRemover = @(sig, len) sig(len+1:end, :, :);
-PA = @(sig, peakW, gainDB) sig .* peakW .* (10 .^ (gainDB / 10));
+txPA = @(sig, peakdBm, declineDB) sig .* 10 .^ ((peakdBm - 30 - declineDB) / 20);
+rxLNA = @(sig, gainDB) (sig .* (10 .^ (gainDB / 20)));
 
 %% system objects
 
@@ -71,7 +72,7 @@ for idxEbn0 = 1:size(ebn0List, 2)
         txMapSig = scMap(txModSig, fftSize, nullIdx);
         txIFFTSig = sqrt(fftSize) .* ifft(txMapSig, fftSize, 1);
         txOFDMSig = cpAdder(txIFFTSig, cpLen);
-        txSig = PA(txOFDMSig, txPower, txGain);
+        txSig = txPA(txOFDMSig, txPmax_dBm, txDecline_dB);
 
         % Channel
         sigPower = calcPower(txSig);
@@ -84,12 +85,12 @@ for idxEbn0 = 1:size(ebn0List, 2)
         rxNoisySig = fadedSigLoss + noise;
 
         % Rx
-        rxSig = PA(rxNoisySig, 1, rxGain);
+        rxSig = rxLNA(rxNoisySig, rxGain_dB);
         [rxAGCSig, agcGain] = agc(rxSig, (fftSize + cpLen) * sigPerLoop, 1);
-        % channelEq = PA(channel, txPower, txGain);
+        % channelEq = txPA(channel, txPmax_dBm, txDecline_dB);
         % channelEq = reshape(channelEq ./ sqrt(db2pow(pathloss)), fftSize * sigPerLoop, 1) .* agcGain;
         % channelEq = reshape(channelEq, fftSize, sigPerLoop);
-        % channelEq = PA(channelEq, 1, rxGain);
+        % channelEq = rxLNA(channelEq, rxGain_dB);
         channelEq = channel;
         rxNoCPSig = cpRemover(rxAGCSig, cpLen);
         rxFFTSig = 1 / sqrt(fftSize) .* fft(rxNoCPSig, fftSize, 1);
