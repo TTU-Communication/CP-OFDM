@@ -78,11 +78,10 @@ for idxEbn0 = 1:size(ebn0List, 2)
         sigPower = calcPower(txSig);
         [fadedSig, channel] = rayleighChannel(txSig, channelLen, 1/channelLen, fftSize, nRX);
         channel = fftshift(channel, 1);
-        fadedSigLoss = fadedSig ./ sqrt(db2pow(pathloss));
 
         % Noise
-        [noise, noisePower] = awgnx(size(fadedSig), snr, sigPower ./ db2pow(pathloss), fadedSig(1));
-        rxNoisySig = fadedSigLoss + noise;
+        [noise, noisePower] = awgnx(size(fadedSig), snr, sigPower, fadedSig(1));
+        rxNoisySig = (fadedSig + noise) ./ db2mag(pathloss);
 
         % Rx
         rxSig = rxLNA(rxNoisySig, rxGain_dB);
