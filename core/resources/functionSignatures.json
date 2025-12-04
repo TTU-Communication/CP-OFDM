@@ -1,5 +1,5 @@
 {
-    "Equalizer":
+    "equalizer":
     {
         "inputs":
         [
@@ -11,6 +11,19 @@
         "outputs":
         [
             {"name":"afterEQ",   "type":["double", "2d"]}
+        ]
+    },
+    "getNullIdx":
+    {
+        "inputs":
+        [
+            {"name":"nfft",     "kind":"required", "type":["numeric", "scalar", ">0"], "purpose":"FFT size"},
+            {"name":"length",   "kind":"ordered",  "type":["numeric", "scalar", ">0"], "purpose":"Guard Band Size"},
+            {"name":"DCLength", "kind":"ordered",  "type":["numeric", "scalar", ">0"], "purpose":"DC Length"}
+        ],
+        "outputs":
+        [
+            {"name":"nullIdx",   "type":["double", "column"]}
         ]
     }
 }

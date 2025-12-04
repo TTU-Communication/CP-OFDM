@@ -1,8 +1,56 @@
 function [nullIdx] = getNullIdx(nfft, length, DCLength)
-% GETNULLIDX get the correspond null subcarrier indices to fft size
+% GETNULLIDX  Return indices of null subcarriers for a given FFT size.
 %
-%   Avaliable FFT size: 32, 64, 128, 256, 512, 1024
-%   Reference: IEEE 802.11
+% SYNTAX
+%   NULLIDX = GETNULLIDX(NFFT)
+%   NULLIDX = GETNULLIDX(NFFT, LENGTH)
+%   NULLIDX = GETNULLIDX(NFFT, LENGTH, DCLENGTH)
+%
+% DESCRIPTION
+%   NULLIDX = GETNULLIDX(NFFT) returns the indices of null subcarriers
+%   (guard bands and DC) according to IEEE 802.11 for supported FFT sizes:
+%   32, 64, 128, 256, 512, 1024.
+%
+%   NULLIDX = GETNULLIDX(NFFT, LENGTH) returns user-defined null subcarrier
+%   indices. LENGTH is the total number of guard-band tones (two-sided).
+%   The function splits LENGTH approximately in half so that data
+%   subcarriers are centered around DC. When LENGTH is odd, the negative-
+%   frequency side (in a -pi...pi view) gets one more null tone than the
+%   positive side.
+%
+%   NULLIDX = GETNULLIDX(NFFT, LENGTH, DCLENGTH) also allows a user-defined
+%   DC region. DCLENGTH specifies the number of DC tones (default 0) and is
+%   counted as part of LENGTH. The DC region is centered around 0
+%   frequency. When DCLENGTH is odd, the positive-frequency side (in a
+%   -pi...pi view) has one more null tone than the negative side to keep DC
+%   centered.
+%
+% INPUTS
+%   NFFT      - FFT size. Supported values for IEEE 802.11 presets:
+%               32, 64, 128, 256, 512, 1024.
+%   LENGTH    - (Optional) Total number of guard-band null tones (two-sided).
+%               If omitted, standard 802.11 allocation is used.
+%   DCLENGTH  - (Optional) Width (in tones) of the DC null region; counted
+%               inside LENGTH. If omitted, the default DC width is used.
+%
+% OUTPUTS
+%   NULLIDX   - Column vector of FFT-bin indices corresponding to null
+%               subcarriers (guard bands + DC), ordered consistently with
+%               1...NFFT.
+%
+% NOTES
+% * LENGTH >= DCLENGTH >= 0 must hold for custom allocations.
+% * For IEEE presets, only the specified NFFT values are supported.
+%
+% EXAMPLES
+%   % IEEE 802.11 (e.g., 64-point) null subcarrier indices:
+%   idx = GETNULLIDX(64);
+%
+%   % Custom: total guard-band length 12 (two-sided), 0 DC width:
+%   idx = GETNULLIDX(128, 12);
+%
+%   % Custom: guard bands total 14 tones, DC region 1 tone wide:
+%   idx = GETNULLIDX(256, 14, 1);
     
     narginchk(1, 3);
 
