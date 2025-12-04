@@ -36,6 +36,6 @@ function [pilotIdx, pilotValue] = getPilotIdxAndVal(nfft)
     end
 
     pilotValue = tempPilotValue(pilotValueIdx)';
-    pilotIdx = [pilotIdx -flip(pilotIdx)]' + nfft / 2 + 1; % Turn to matlab index
+    pilotIdx = [-flip(pilotIdx) (pilotIdx + nfft)]' + 1; % Turn to matlab index
 end
 

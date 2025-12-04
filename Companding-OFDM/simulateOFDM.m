@@ -4,7 +4,9 @@ addpath(genpath(fullfile(fileparts(mfilename('fullpath')), '..', 'core')));
 
 %% parameter setting
 fftSize = 2048;                 % FFT size
-nullIdx = [-1024:-321 0 321:1023]' + 1024 + 1;  % Null Subcarrier Index
+nullIdx = [-1024:-321 0 321:1023]';  % Null Subcarrier Index
+nullIdx(nullIdx < 0) = nullIdx(nullIdx < 0) + 2048;
+nullIdx = nullIdx + 1;
 cpLen = fftSize * 1 / 8;        % Cyclic Prefix size
 % channelLen = 8;                 % Multipath length in rayleight distribution (no LoS)
 modOrder = 16;                  % The point amount of constellation
@@ -77,12 +79,10 @@ for idxEbn0 = 1:size(ebn0List, 2)
         % Channel CP-OFDM
         sigPower = calcPower(txOFDMSig);
         % [fadedSig, channel] = rayleighChannel(txOFDMSig, channelLen, 1/channelLen, fftSize);
-        % channel = ifftshift(channel, 1);
         fadedSig = txOFDMSig;
         % Channel Companding OFDM
         cmpSigPower = calcPower(txCmpSig);
         % [fadedCmpSig, channelCmp] = rayleighChannel(txCmpSig, channelLen, 1/channelLen, fftSize);
-        % channelCmp = ifftshift(channel, 1);
         fadedCmpSig = txCmpSig;
 
         % Noise CP-OFDM

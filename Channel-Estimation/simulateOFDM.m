@@ -67,7 +67,6 @@ for idxEbn0 = 1:size(ebn0List, 2)
         % Channel
         sigPower = calcPower(txOFDMSig);
         [fadedSig, channel] = rayleighChannel(txOFDMSig, channelLen, 1/channelLen, fftSize);
-        channel = fftshift(channel, 1);
 
         % Noise
         noise = awgnx(size(fadedSig), snr, sigPower, fadedSig(1));

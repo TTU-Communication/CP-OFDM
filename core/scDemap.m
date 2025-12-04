@@ -31,12 +31,10 @@ function varargout = scDemap(x, nfft, varargin)
 
     [prmStr, dataIdx] = setup(x, nfft, varargin{:});
 
-    preShiftx = fftshift(x, 1);
-
-    varargout{1} = preShiftx(dataIdx, :, :);
+    varargout{1} = x(dataIdx, :, :);
 
     if ~isempty(prmStr.PilotIndices)
-        varargout{2} = preShiftx(prmStr.PilotIndices, :, :);
+        varargout{2} = x(prmStr.PilotIndices, :, :);
     else
         nargoutchk(0, 1);
     end

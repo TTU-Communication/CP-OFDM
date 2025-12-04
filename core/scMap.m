@@ -42,8 +42,6 @@ function y = scMap(x, nfft, varargin)
         y(prmStr.PilotIndices, :) = prmStr.Pilots;
     end
 
-    y = ifftshift(y, 1);
-
 end
 
 function [prmStr, pDataIdx] = setup(x, nfft, varargin)
