@@ -4,9 +4,7 @@ addpath(genpath(fullfile(fileparts(mfilename('fullpath')), '..', 'core')));
 
 %% parameter setting
 fftSize = 2048;                 % FFT size
-nullIdx = [-1024:-321 0 321:1023]';  % Null Subcarrier Index
-nullIdx(nullIdx < 0) = nullIdx(nullIdx < 0) + 2048;
-nullIdx = nullIdx + 1;
+nullIdx = getNullIdx(fftSize, 2048 - 640, 1);  % Null Subcarrier Index
 cpLen = fftSize * 1 / 8;        % Cyclic Prefix size
 % channelLen = 8;                 % Multipath length in rayleight distribution (no LoS)
 modOrder = 16;                  % The point amount of constellation
