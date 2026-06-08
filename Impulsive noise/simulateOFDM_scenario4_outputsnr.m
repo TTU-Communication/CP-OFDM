@@ -4,8 +4,10 @@ addpath(genpath(fullfile(fileparts(mfilename('fullpath')), '..', 'core')));
 
 %% parameter setting
 fftSize = 256;                   % FFT size
-dataFactor = [7 1]; % data, null ratio
-nullIdx = getNullIdx(fftSize, fftSize / sum(dataFactor) * dataFactor(2)); % Null Subcarrier Index
+% dataFactor = [7 1]; % data, null ratio
+% nullIdx = getNullIdx(fftSize, fftSize / sum(dataFactor) * dataFactor(2)); % Null Subcarrier Index
+nullIdx = getNullIdx(fftSize);
+[pilotIdx, pilots] = getPilotIdxAndVal(fftSize);
 cpLen = fftSize * 1 / 4;        % Cyclic Prefix size
 channelLen = 8;                 % Multipath length in rayleight distribution (no LoS)
 kFactor = 8;
@@ -30,8 +32,9 @@ rng(2025);
 gpurng(2025);
 
 %% value depends on parameter
-numData = fftSize - length(nullIdx);    % Data subcarrier size
-dataIdx = setdiff((1:fftSize)', [nullIdx]);
+numData = fftSize - length(nullIdx) - length(pilotIdx);    % Data subcarrier size
+dataIdx = setdiff((1:fftSize)', [nullIdx; pilotIdx]);
+pilots = repmat(pilots, 1, sigPerLoop);
 bitsPerModSymbol = log2(modOrder);
 bitsPerOFDMSymbol = numData * bitsPerModSymbol;
 
@@ -54,10 +57,11 @@ end
 cpAdder = @(sig, len) sig([end-len+1:end, 1:end], :, :);
 cpRemover = @(sig, len) sig(len+1:end, :, :);
 
-transMask = gpuArray.zeros(fftSize, 1);
-transMask(nullIdx) = 1;
-transMask = repmat(transMask, 1, sigPerLoop);
-sigRef = gpuArray.zeros(fftSize, sigPerLoop);
+transMask = gpuArray.zeros(fftSize, sigPerLoop);
+transMask([nullIdx; pilotIdx], :) = 1;
+sigRefFD = gpuArray.zeros(fftSize, sigPerLoop);
+sigRefFD(pilotIdx, :) = pilots;
+sigRef = sqrt(fftSize) .* ifft(sigRefFD, fftSize, 1);
 
 %% data storage
 % rxPGIRSigList = cell(1, length(iterCountList));
@@ -82,7 +86,7 @@ for idxINprob = 1:length(INprobList)
 
     inDataBits = randomBits([bitsPerOFDMSymbol sigPerLoop nTX]);
     txModSig = modulator(inDataBits, modOrder);
-    txMapSig = scMap(txModSig, fftSize, nullIdx);
+    txMapSig = scMap(txModSig, fftSize, nullIdx, pilotIdx, pilots);
     txIFFTSig = sqrt(fftSize) .* ifft(txMapSig, fftSize, 1);
     txOFDMSig = cpAdder(txIFFTSig, cpLen);
 

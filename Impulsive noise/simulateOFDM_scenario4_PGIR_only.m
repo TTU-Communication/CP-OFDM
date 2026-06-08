@@ -5,7 +5,9 @@ addpath(genpath(fullfile(fileparts(mfilename('fullpath')), '..', 'core')));
 %% parameter setting
 fftSize = 256;                   % FFT size
 dataFactor = [7 1]; % data, null ratio
-nullIdx = getNullIdx(fftSize, fftSize / sum(dataFactor) * dataFactor(2)); % Null Subcarrier Index
+% nullIdx = getNullIdx(fftSize, fftSize / sum(dataFactor) * dataFactor(2)); % Null Subcarrier Index
+nullIdx = getNullIdx(fftSize);
+[pilotIdx, pilots] = getPilotIdxAndVal(fftSize);
 cpLen = fftSize * 1 / 4;        % Cyclic Prefix size
 channelLen = 8;                 % Multipath length in rayleight distribution (no LoS)
 kFactor = 8;
@@ -24,8 +26,9 @@ rng(2025);
 gpurng(2025);
 
 %% value depends on parameter
-numData = fftSize - length(nullIdx);    % Data subcarrier size
-dataIdx = setdiff((1:fftSize)', nullIdx);
+numData = fftSize - length(nullIdx) - length(pilotIdx);    % Data subcarrier size
+dataIdx = setdiff((1:fftSize)', [nullIdx; pilotIdx]);
+pilots = repmat(pilots, 1, sigPerLoop);
 bitsPerModSymbol = log2(modOrder);
 bitsPerOFDMSymbol = numData * bitsPerModSymbol;
 
@@ -48,10 +51,11 @@ end
 cpAdder = @(sig, len) sig([end-len+1:end, 1:end], :, :);
 cpRemover = @(sig, len) sig(len+1:end, :, :);
 
-transMask = gpuArray.zeros(fftSize, 1);
-transMask(nullIdx) = 1;
-transMask = repmat(transMask, 1, sigPerLoop);
-sigRef = gpuArray.zeros(fftSize, sigPerLoop);
+transMask = gpuArray.zeros(fftSize, sigPerLoop);
+transMask([nullIdx; pilotIdx]) = 1;
+sigRefFD = gpuArray.zeros(fftSize, sigPerLoop);
+sigRefFD(pilotIdx, :) = pilots;
+sigRef = sqrt(fftSize) .* ifft(sigRefFD);
 
 %% data storage
 ber = zeros(1, length(ebn0List));
@@ -76,7 +80,7 @@ for idxEbn0 = 1:size(ebn0List, 2)
         % Tx
         inDataBits = randomBits([bitsPerOFDMSymbol sigPerLoop nTX]);
         txModSig = modulator(inDataBits, modOrder);
-        txMapSig = scMap(txModSig, fftSize, nullIdx);
+        txMapSig = scMap(txModSig, fftSize, nullIdx, pilotIdx, pilots);
         txIFFTSig = sqrt(fftSize) .* ifft(txMapSig, fftSize, 1);
         txOFDMSig = cpAdder(txIFFTSig, cpLen);
 
@@ -103,13 +107,13 @@ for idxEbn0 = 1:size(ebn0List, 2)
         rxNoCPSig = cpRemover(rxNoisySig, cpLen);
         rxFFTSig = 1 / sqrt(fftSize) .* fft(rxNoCPSig, fftSize, 1);
         rxEQSig = equalizer(rxFFTSig, channel);
-        rxDemapSig = scDemap(rxEQSig, fftSize, nullIdx);
+        rxDemapSig = scDemap(rxEQSig, fftSize, nullIdx, pilotIdx);
         outDataBits = demodulator(rxDemapSig, modOrder);
 
         rxINNoCPSig = cpRemover(rxINNoisySig, cpLen);
         rxINFFTSig = 1 / sqrt(fftSize) .* fft(rxINNoCPSig, fftSize, 1);
         rxINEQSig = equalizer(rxINFFTSig, channel);
-        rxINDemapSig = scDemap(rxINEQSig, fftSize, nullIdx);
+        rxINDemapSig = scDemap(rxINEQSig, fftSize, nullIdx, pilotIdx);
         outINDataBits = demodulator(rxINDemapSig, modOrder);
 
         % rxIndex = sub2ind(size(rxINFFTSig), orgIndex, 1:sigPerLoop);
@@ -120,7 +124,7 @@ for idxEbn0 = 1:size(ebn0List, 2)
         dataMask = abs(rxPGIRTDSig) < ampThreshold;
         rxPGIRSig = PGIR(rxPGIRTDSig, sigRef, dataMask, transMask, iterCount);
         rxPGIRFDSig = 1 / sqrt(fftSize) .* fft(rxPGIRSig, fftSize, 1);
-        rxPGIRDemapSig = scDemap(rxPGIRFDSig, fftSize, nullIdx);
+        rxPGIRDemapSig = scDemap(rxPGIRFDSig, fftSize, nullIdx, pilotIdx);
         outINPGIRDataBits = demodulator(rxPGIRDemapSig, modOrder);
 
         % BER calculate

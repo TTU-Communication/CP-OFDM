@@ -4,8 +4,10 @@ addpath(genpath(fullfile(fileparts(mfilename('fullpath')), '..', 'core')));
 
 %%
 fftSize = 256;
-dataFactor = [7 1]; % data, null ratio
-nullIdx = getNullIdx(fftSize, fftSize / sum(dataFactor) * dataFactor(2));
+% dataFactor = [7 1]; % data, null ratio
+% nullIdx = getNullIdx(fftSize, fftSize / sum(dataFactor) * dataFactor(2));
+nullIdx = getNullIdx(fftSize);
+[pilotIdx, pilotVal] = getPilotIdxAndVal(fftSize);
 iterCount = 50;
 snr = 25;
 sinr = -15;
@@ -18,7 +20,6 @@ Msample = 3000;
 powerS = (fftSize - length(nullIdx)) / fftSize;
 powerW = powerS / 10 ^ (snr / 10);
 powerG = powerS / 10 ^ (sinr / 10);
-TDknownMask = false(fftSize); TDknownMask(nullIdx) = true;
 
 powerList = powerS + [powerW; powerW + powerG];
 
@@ -47,9 +48,9 @@ for idxINp = 1:length(INHappenPList)
         EoutPGIRSig = KPGIRSig;
 
         U = sum(pList .* expList, 1);
-        [powerE, errorSigCon] = reconErr(fftSize, TDknownMask, T, INp, ...
-                                         powerS, powerW, powerG, ...
-                                         iterCount, Msample);
+        [powerE, errorSigCon] = reconErr(fftSize, nullIdx, T, INp, ...
+                                 powerS, powerW, powerG, ...
+                                 iterCount, Msample, pilotIdx, pilotVal);
         KPGIR = KBlank + (KPGIRSig + errorSigCon * U) / powerS;
         EoutPGIR = EoutBlank + EoutPGIRSig + (powerE + 2 * real(errorSigCon)) * U;
 
@@ -82,8 +83,17 @@ function db = snr_db(num)
     db(~idx) = nan;
 end
 
-function [powerE, errorSigCon] = reconErr(fftSize, nullMask, T, p, powerS, powerW, powerG, iterCount, Msample)
-    
+function [powerE, errorSigCon] = reconErr(fftSize, nullMask, T, p, powerS, powerW, powerG, iterCount, Msample, pilotIdx, pilotVal)
+
+    if nargin < 10, pilotIdx = []; end
+    if nargin < 11, pilotVal = []; end
+    if isempty(pilotIdx) || isempty(pilotVal)
+        pilotIdx = [];
+        pilotVal = [];
+    end
+    pilotIdx    = pilotIdx(:);
+    pilotVal    = pilotVal(:);
+
     totabssquE = 0;
     toterrorSig = 0;
     cnt     = 0;
@@ -92,6 +102,7 @@ function [powerE, errorSigCon] = reconErr(fftSize, nullMask, T, p, powerS, power
         % ---- OFDM signal (with null subcarriers) ----------------------
         X = (randn(fftSize,1) + 1j*randn(fftSize,1)) / sqrt(2);
         X(nullMask) = 0;
+        X(pilotIdx) = pilotVal;             % insert the known pilot symbols
         x = sqrt(fftSize) .* ifft(X);
 
         % ---- Bernoulli-Gaussian noise --------------------------------
@@ -108,10 +119,11 @@ function [powerE, errorSigCon] = reconErr(fftSize, nullMask, T, p, powerS, power
         % ---- PGIR  xhat^(i+1) = P_D(P_T(xhat^(i))),  xhat^(0) = 0 ----
         xhat = zeros(fftSize,1);
         for i = 0:iterCount
-            Xhat = fft(xhat);
-            Xhat(nullMask) = 0;
-            xhat = ifft(Xhat);
-            xhat(kno) = r(kno);
+            Xhat = 1 / sqrt(fftSize) .* fft(xhat);
+            Xhat(nullMask) = 0;             % null  subcarriers -> 0
+            Xhat(pilotIdx) = pilotVal;   % pilot subcarriers -> known value
+            xhat = sqrt(fftSize) .* ifft(Xhat);
+            xhat(kno) = r(kno);             % trusted (un-blanked) samples
         end
 
         error = xhat(unk) - x(unk);

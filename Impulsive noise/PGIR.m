@@ -26,7 +26,7 @@ function [restoredSig, process] = PGIR(sigTarget, sigRef, dataMask, transMask, s
     end
     
     % initial for GPGA
-    sigRefFreq = fft(sigRef, sigSize, 1);
+    sigRefFreq = 1 / sqrt(sigSize) .* fft(sigRef, sigSize, 1);
     restoringSig = dataMask .* sigTarget;
     currentIter = 0;
     
@@ -36,9 +36,9 @@ function [restoredSig, process] = PGIR(sigTarget, sigRef, dataMask, transMask, s
 
     % GPGA process
     while maxIter > currentIter
-        restoringSinFreq = fft(restoringSig, sigSize, 1);
+        restoringSinFreq = 1 / sqrt(sigSize) .* fft(restoringSig, sigSize, 1);
         restoringSinFreq = (1 - transMask) .* restoringSinFreq + transMask .* sigRefFreq;
-        restoringSig = ifft(restoringSinFreq, sigSize, 1);
+        restoringSig = sqrt(sigSize) .* ifft(restoringSinFreq, sigSize, 1);
         restoringSig = (1 - dataMask) .* restoringSig + dataMask .* sigTarget;
 
         currentIter = currentIter + 1;
