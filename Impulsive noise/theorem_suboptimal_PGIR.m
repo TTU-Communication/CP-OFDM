@@ -91,8 +91,8 @@ function [powerE, errorSigCon] = reconErr(fftSize, nullMask, T, p, powerS, power
         pilotIdx = [];
         pilotVal = [];
     end
-    pilotIdx    = pilotIdx(:);
-    pilotVal    = pilotVal(:);
+    transMask = zeros(fftSize, 1);
+    transMask([nullMask; pilotIdx]) = 1;
 
     totabssquE = 0;
     toterrorSig = 0;
@@ -112,24 +112,17 @@ function [powerE, errorSigCon] = reconErr(fftSize, nullMask, T, p, powerS, power
         u = w + b.*g;
         r = x + u;
 
-        unk = abs(r) > T;
-        kno = ~unk;
-        if ~any(unk),  continue;  end
+        unkDataMask = abs(r) > T;
+        dataMask = ~unkDataMask;
+        if ~any(unkDataMask),  continue;  end
 
         % ---- PGIR  xhat^(i+1) = P_D(P_T(xhat^(i))),  xhat^(0) = 0 ----
-        xhat = zeros(fftSize,1);
-        for i = 0:iterCount
-            Xhat = 1 / sqrt(fftSize) .* fft(xhat);
-            Xhat(nullMask) = 0;             % null  subcarriers -> 0
-            Xhat(pilotIdx) = pilotVal;   % pilot subcarriers -> known value
-            xhat = sqrt(fftSize) .* ifft(Xhat);
-            xhat(kno) = r(kno);             % trusted (un-blanked) samples
-        end
+        xhat = PGIR(r, x, dataMask, transMask, iterCount);
 
-        error = xhat(unk) - x(unk);
+        error = xhat(unkDataMask) - x(unkDataMask);
         totabssquE = totabssquE + sum(abs(error).^2);
-        toterrorSig = toterrorSig + sum(error .* conj(x(unk)));
-        cnt     = cnt + sum(unk);
+        toterrorSig = toterrorSig + sum(error .* conj(x(unkDataMask)));
+        cnt     = cnt + sum(unkDataMask);
     end
 
     if cnt == 0
