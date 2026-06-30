@@ -85,20 +85,21 @@ for idxINprob = 1:length(INprobList)
 
     fprintf('Start process %f probability at %s\n', INprob, datetime('now', TimeZone='local', Format='MM-dd HH:mm:ss'));
 
-    pgirNum = zeros(baseSigCount / sigPerLoop, length(ampThresholdList));
-    pgirDen = zeros(baseSigCount / sigPerLoop, length(ampThresholdList));
-    blankNum = zeros(baseSigCount / sigPerLoop, length(ampThresholdList));
-    blankDen = zeros(baseSigCount / sigPerLoop, length(ampThresholdList));
-    clipNum = zeros(baseSigCount / sigPerLoop, length(ampThresholdList));
-    clipDen = zeros(baseSigCount / sigPerLoop, length(ampThresholdList));
-    clipBlankNum = zeros(baseSigCount / sigPerLoop, length(ampThresholdList));
-    clipBlankDen = zeros(baseSigCount / sigPerLoop, length(ampThresholdList));
-    deepClipNum = zeros(baseSigCount / sigPerLoop, length(ampThresholdList));
-    deepClipDen = zeros(baseSigCount / sigPerLoop, length(ampThresholdList));
-    replaceNum = zeros(baseSigCount / sigPerLoop, length(ampThresholdList));
-    replaceDen = zeros(baseSigCount / sigPerLoop, length(ampThresholdList));
-    replaceClipBlankNum = zeros(baseSigCount / sigPerLoop, length(ampThresholdList));
-    replaceClipBlankDen = zeros(baseSigCount / sigPerLoop, length(ampThresholdList));
+    tempSumTxIFFT2 = zeros(baseSigCount / sigPerLoop, 1);
+    tempSumRxPGIRTxIFFT = zeros(baseSigCount / sigPerLoop, length(ampThresholdList));
+    tempSumRxPGIR2 = zeros(baseSigCount / sigPerLoop, length(ampThresholdList));
+    tempSumRxBlankTxIFFT = zeros(baseSigCount / sigPerLoop, length(ampThresholdList));
+    tempSumRxBlank2 = zeros(baseSigCount / sigPerLoop, length(ampThresholdList));
+    tempSumRxClipTxIFFT = zeros(baseSigCount / sigPerLoop, length(ampThresholdList));
+    tempSumRxClip2 = zeros(baseSigCount / sigPerLoop, length(ampThresholdList));
+    tempSumRxClipBlankTxIFFT = zeros(baseSigCount / sigPerLoop, length(ampThresholdList));
+    tempSumRxClipBlank2 = zeros(baseSigCount / sigPerLoop, length(ampThresholdList));
+    tempSumRxDeepClipTxIFFT = zeros(baseSigCount / sigPerLoop, length(ampThresholdList));
+    tempSumRxDeepClip2 = zeros(baseSigCount / sigPerLoop, length(ampThresholdList));
+    tempSumRxReplaceTxIFFT = zeros(baseSigCount / sigPerLoop, length(ampThresholdList));
+    tempSumRxReplace2 = zeros(baseSigCount / sigPerLoop, length(ampThresholdList));
+    tempSumRxReplaceClipBlankTxIFFT = zeros(baseSigCount / sigPerLoop, length(ampThresholdList));
+    tempSumRxReplaceClipBlank2 = zeros(baseSigCount / sigPerLoop, length(ampThresholdList));
 
     for idxLoop = 1:(baseSigCount / sigPerLoop)
         inDataBits = randomBits([bitsPerOFDMSymbol sigPerLoop nTX]);
@@ -106,6 +107,8 @@ for idxINprob = 1:length(INprobList)
         txMapSig = scMap(txModSig, fftSize, nullIdx, pilotIdx, pilots);
         txIFFTSig = sqrt(fftSize) .* ifft(txMapSig, fftSize, 1);
         txOFDMSig = cpAdder(txIFFTSig, cpLen);
+
+        tempSumTxIFFT2(idxLoop) = sum(abs(txIFFTSig).^2, 'all');
 
         % Channel
         sigPower = calcPower(txOFDMSig);
@@ -146,34 +149,22 @@ for idxINprob = 1:length(INprobList)
             dataMask = abs(rxPGIRTDSig) < ampThreshold;
             rxPGIRSig = PGIR(rxPGIRTDSig, sigRef, dataMask, transMask, iterCount);
             rxPGIREQTDSig = autoConvertFDDoEQ(rxPGIRSig, fftSize, channel, noisePower);
-            pgirK_0 = mean(rxPGIREQTDSig .* conj(txIFFTSig), 1) ./ calcPower(txIFFTSig);
-            % pgirTempSNREff = sum(calcPower(pgirK_0 .* txIFFTSig)) ./ sum(calcPower(rxPGIREQTDSig - pgirK_0 .* txIFFTSig));
-            % 
-            % pgirSNREff(idxINprob, idxAmpThreshold) = gather(mean(pgirTempSNREff));
-            pgirNum(idxLoop, idxAmpThreshold) = sum(calcPower(pgirK_0 .* txIFFTSig));
-            pgirDen(idxLoop, idxAmpThreshold) = sum(calcPower(rxPGIREQTDSig - pgirK_0 .* txIFFTSig));
+            tempSumRxPGIRTxIFFT(idxLoop, idxAmpThreshold) = sum(rxPGIREQTDSig .* conj(txIFFTSig), 'all');
+            tempSumRxPGIR2(idxLoop, idxAmpThreshold) = sum(abs(rxPGIREQTDSig) .^ 2, 'all');
 
             rxBlankSig = rxPGIRTDSig;
             idxBlank = abs(rxBlankSig) > ampThreshold;
             rxBlankSig(idxBlank) = 0;
             rxBlankEQTDSig = autoConvertFDDoEQ(rxBlankSig, fftSize, channel, noisePower);
-            blankK_0 = mean(rxBlankEQTDSig .* conj(txIFFTSig), 1) ./ calcPower(txIFFTSig);
-            % blankTempSNREff = sum(calcPower(blankK_0 .* txIFFTSig)) ./ sum(calcPower(rxBlankEQTDSig - blankK_0 .* txIFFTSig));
-            % 
-            % blankSNREff(idxINprob, idxAmpThreshold) = gather(mean(blankTempSNREff));
-            blankNum(idxLoop, idxAmpThreshold) = sum(calcPower(blankK_0 .* txIFFTSig));
-            blankDen(idxLoop, idxAmpThreshold) = sum(calcPower(rxBlankEQTDSig - blankK_0 .* txIFFTSig));
+            tempSumRxBlankTxIFFT(idxLoop, idxAmpThreshold) = sum(rxBlankEQTDSig .* conj(txIFFTSig), 'all');
+            tempSumRxBlank2(idxLoop, idxAmpThreshold) = sum(abs(rxBlankEQTDSig) .^ 2, 'all');
 
             rxClipSig = rxPGIRTDSig;
             idxClip = abs(rxClipSig) > ampThreshold;
             rxClipSig(idxClip) = ampThreshold .* exp(1j .* angle(rxClipSig(idxClip)));
             rxClipEQTDSig = autoConvertFDDoEQ(rxClipSig, fftSize, channel, noisePower);
-            clipK_0 = mean(rxClipEQTDSig .* conj(txIFFTSig), 1) ./ calcPower(txIFFTSig);
-            % clipTempSNREff = sum(calcPower(clipK_0 .* txIFFTSig)) ./ sum(calcPower(rxClipEQTDSig - clipK_0 .* txIFFTSig));
-            % 
-            % clipSNREff(idxINprob, idxAmpThreshold) = gather(mean(clipTempSNREff));
-            clipNum(idxLoop, idxAmpThreshold) = sum(calcPower(clipK_0 .* txIFFTSig));
-            clipDen(idxLoop, idxAmpThreshold) = sum(calcPower(rxClipEQTDSig - clipK_0 .* txIFFTSig));
+            tempSumRxClipTxIFFT(idxLoop, idxAmpThreshold) = sum(rxClipEQTDSig .* conj(txIFFTSig), 'all');
+            tempSumRxClip2(idxLoop, idxAmpThreshold) = sum(abs(rxClipEQTDSig) .^ 2, 'all');
 
             rxClipBlankSig = rxPGIRTDSig;
             idxClip = abs(rxClipBlankSig) > ampThreshold;
@@ -181,13 +172,8 @@ for idxINprob = 1:length(INprobList)
             rxClipBlankSig(idxClip) = ampThreshold .* exp(1j .* angle(rxClipBlankSig(idxClip)));
             rxClipBlankSig(idxBlank) = 0;
             rxClipBlankEQTDSig = autoConvertFDDoEQ(rxClipBlankSig, fftSize, channel, noisePower);
-            clipBlankK_0 = mean(rxClipBlankEQTDSig .* conj(txIFFTSig), 1) ./ calcPower(txIFFTSig);
-            % clipBlankTempSNREff = sum(calcPower(clipBlankK_0 .* txIFFTSig)) ...
-            %     ./ sum(calcPower(rxClipBlankEQTDSig - clipBlankK_0 .* txIFFTSig));
-            % 
-            % clipBlankSNREff(idxINprob, idxAmpThreshold) = gather(mean(clipBlankTempSNREff));
-            clipBlankNum(idxLoop, idxAmpThreshold) = sum(calcPower(clipBlankK_0 .* txIFFTSig));
-            clipBlankDen(idxLoop, idxAmpThreshold) = sum(calcPower(rxClipBlankEQTDSig - clipBlankK_0 .* txIFFTSig));
+            tempSumRxClipBlankTxIFFT(idxLoop, idxAmpThreshold) = sum(rxClipBlankEQTDSig .* conj(txIFFTSig), 'all');
+            tempSumRxClipBlank2(idxLoop, idxAmpThreshold) = sum(abs(rxClipBlankEQTDSig) .^ 2, 'all');
 
             rxDeepClipSig = rxPGIRTDSig;
             idxDeepClip = abs(rxDeepClipSig) > ampThreshold;
@@ -196,25 +182,15 @@ for idxINprob = 1:length(INprobList)
                 .* exp(1j .* angle(rxDeepClipSig(idxDeepClip)));
             rxDeepClipSig(idxBlank) = 0;
             rxDeepClipEQTDSig = autoConvertFDDoEQ(rxDeepClipSig, fftSize, channel, noisePower);
-            deepClipK_0 = mean(rxDeepClipEQTDSig .* conj(txIFFTSig), 1) ./ calcPower(txIFFTSig);
-            % deepClipTempSNREff = sum(calcPower(deepClipK_0 .* txIFFTSig)) ...
-            %     ./ sum(calcPower(rxDeepClipEQTDSig - deepClipK_0 .* txIFFTSig));
-            % 
-            % deepClipSNREff(idxINprob, idxAmpThreshold) = gather(mean(deepClipTempSNREff));
-            deepClipNum(idxLoop, idxAmpThreshold) = sum(calcPower(deepClipK_0 .* txIFFTSig));
-            deepClipDen(idxLoop, idxAmpThreshold) = sum(calcPower(rxDeepClipEQTDSig - deepClipK_0 .* txIFFTSig));
+            tempSumRxDeepClipTxIFFT(idxLoop, idxAmpThreshold) = sum(rxDeepClipEQTDSig .* conj(txIFFTSig), 'all');
+            tempSumRxDeepClip2(idxLoop, idxAmpThreshold) = sum(abs(rxDeepClipEQTDSig) .^ 2, 'all');
 
             rxReplaceSig = rxPGIRTDSig;
             idxReplace = abs(rxReplaceSig) > ampThreshold;
             rxReplaceSig(idxReplace) = (sqrt(pi .* sigP ./ 4)) .* exp(1j .* angle(rxReplaceSig(idxReplace)));
             rxReplaceEQTDSig = autoConvertFDDoEQ(rxReplaceSig, fftSize, channel, noisePower);
-            replaceK_0 = mean(rxReplaceEQTDSig .* conj(txIFFTSig), 1) ./ calcPower(txIFFTSig);
-            % replaceTempSNREff = sum(calcPower(replaceK_0 .* txIFFTSig)) ...
-            %     ./ sum(calcPower(rxReplaceEQTDSig - replaceK_0 .* txIFFTSig));
-            % 
-            % replaceSNREff(idxINprob, idxAmpThreshold) = gather(mean(replaceTempSNREff));
-            replaceNum(idxLoop, idxAmpThreshold) = sum(calcPower(replaceK_0 .* txIFFTSig));
-            replaceDen(idxLoop, idxAmpThreshold) = sum(calcPower(rxReplaceEQTDSig - replaceK_0 .* txIFFTSig));
+            tempSumRxReplaceTxIFFT(idxLoop, idxAmpThreshold) = sum(rxReplaceEQTDSig .* conj(txIFFTSig), 'all');
+            tempSumRxReplace2(idxLoop, idxAmpThreshold) = sum(abs(rxReplaceEQTDSig) .^ 2, 'all');
 
             rxReplaceClipBlankSig = rxPGIRTDSig;
             idxClip = abs(rxReplaceClipBlankSig) > ampThreshold;
@@ -224,25 +200,42 @@ for idxINprob = 1:length(INprobList)
             rxReplaceClipBlankSig(idxReplace) = (sqrt(pi .* sigP ./ 4)) .* exp(1j .* angle(rxReplaceClipBlankSig(idxReplace)));
             rxReplaceClipBlankSig(idxBlank) = 0;
             rxReplaceClipBlankEQTDSig = autoConvertFDDoEQ(rxReplaceClipBlankSig, fftSize, channel, noisePower);
-            replaceClipBlankK_0 = mean(rxReplaceClipBlankEQTDSig .* conj(txIFFTSig), 1) ./ calcPower(txIFFTSig);
-            % replaceClipBlankTempSNREff = sum(calcPower(replaceClipBlankK_0 .* txIFFTSig)) ...
-            %     ./ sum(calcPower(rxReplaceClipBlankEQTDSig - replaceClipBlankK_0 .* txIFFTSig));
-            % 
-            % replaceClipBlankSNREff(idxINprob, idxAmpThreshold) = gather(mean(replaceClipBlankTempSNREff));
-            replaceClipBlankNum(idxLoop, idxAmpThreshold) = sum(calcPower(replaceClipBlankK_0 .* txIFFTSig));
-            replaceClipBlankDen(idxLoop, idxAmpThreshold) = sum(calcPower(rxReplaceClipBlankEQTDSig - replaceClipBlankK_0 .* txIFFTSig));
+            tempSumRxReplaceClipBlankTxIFFT(idxLoop, idxAmpThreshold) = sum(rxReplaceClipBlankEQTDSig .* conj(txIFFTSig), 'all');
+            tempSumRxReplaceClipBlank2(idxLoop, idxAmpThreshold) = sum(abs(rxReplaceClipBlankEQTDSig) .^ 2, 'all');
 
         end
 
     end
 
-    pgirSNREff(idxINprob, :) = sum(pgirNum, 1) ./ sum(pgirDen, 1);
-    blankSNREff(idxINprob, :) = sum(blankNum, 1) ./ sum(blankDen, 1);
-    clipSNREff(idxINprob, :) = sum(clipNum, 1) ./ sum(clipDen, 1);
-    clipBlankSNREff(idxINprob, :) = sum(clipBlankNum, 1) ./ sum(clipBlankDen, 1);
-    deepClipSNREff(idxINprob, :) = sum(deepClipNum, 1) ./ sum(deepClipDen, 1);
-    replaceSNREff(idxINprob, :) = sum(replaceNum, 1) ./ sum(replaceDen, 1);
-    replaceClipBlankSNREff(idxINprob, :) = sum(replaceClipBlankNum, 1) ./ sum(replaceClipBlankDen, 1);
+    sumTxIFFT2 = sum(tempSumTxIFFT2);
+
+    sumRxPGIRTxIFFT = sum(tempSumRxPGIRTxIFFT, 1);
+    sumRxPGIR2 = sum(tempSumRxPGIR2, 1);
+    pgirSNREff(idxINprob, :) = calcBussgangPoolSNR(sumTxIFFT2, sumRxPGIRTxIFFT, sumRxPGIR2);
+
+    sumRxBlankTxIFFT = sum(tempSumRxBlankTxIFFT, 1);
+    sumRxBlank2 = sum(tempSumRxBlank2, 1);
+    blankSNREff(idxINprob, :) = calcBussgangPoolSNR(sumTxIFFT2, sumRxBlankTxIFFT, sumRxBlank2);
+
+    sumRxClipTxIFFT = sum(tempSumRxClipTxIFFT, 1);
+    sumRxClip2 = sum(tempSumRxClip2, 1);
+    clipSNREff(idxINprob, :) = calcBussgangPoolSNR(sumTxIFFT2, sumRxClipTxIFFT, sumRxClip2);
+
+    sumRxClipBlankTxIFFT = sum(tempSumRxClipBlankTxIFFT, 1);
+    sumRxClipBlank2 = sum(tempSumRxClipBlank2, 1);
+    clipBlankSNREff(idxINprob, :) = calcBussgangPoolSNR(sumTxIFFT2, sumRxClipBlankTxIFFT, sumRxClipBlank2);
+
+    sumRxDeepClipTxIFFT = sum(tempSumRxDeepClipTxIFFT, 1);
+    sumRxDeepClip2 = sum(tempSumRxDeepClip2, 1);
+    deepClipSNREff(idxINprob, :) = calcBussgangPoolSNR(sumTxIFFT2, sumRxDeepClipTxIFFT, sumRxDeepClip2);
+
+    sumRxReplaceTxIFFT = sum(tempSumRxReplaceTxIFFT, 1);
+    sumRxReplace2 = sum(tempSumRxReplace2, 1);
+    replaceSNREff(idxINprob, :) = calcBussgangPoolSNR(sumTxIFFT2, sumRxReplaceTxIFFT, sumRxReplace2);
+
+    sumRxReplaceClipBlankTxIFFT = sum(tempSumRxReplaceClipBlankTxIFFT, 1);
+    sumRxReplaceClipBlank2 = sum(tempSumRxReplaceClipBlank2, 1);
+    replaceClipBlankSNREff(idxINprob, :) = calcBussgangPoolSNR(sumTxIFFT2, sumRxReplaceClipBlankTxIFFT, sumRxReplaceClipBlank2);
 
 end
 
@@ -318,4 +311,16 @@ function [afterEQTDSig] = autoConvertFDDoEQ(inSig, fftSize, channel, noisePower)
     inFDSig = 1 / sqrt(fftSize) .* fft(inSig, fftSize, 1);
     afterEQSig = equalizer(inFDSig, channel, noisePower);
     afterEQTDSig = sqrt(fftSize) .* ifft(afterEQSig, fftSize, 1);
+end
+
+function [outputSNR] = calcBussgangPoolSNR(sumX2, sumYX, sumY2)
+    KPool = sumYX ./ sumX2;
+
+    sigPower = abs(KPool).^2 .* sumX2;
+
+    % Equivalent to sum(abs(Y - Kpool*X).^2, 'all'), but more efficient.
+    errPower = real(sumY2 - abs(sumYX).^2 ./ sumX2);
+    errPower = max(errPower, eps);
+
+    outputSNR = sigPower ./ errPower;
 end

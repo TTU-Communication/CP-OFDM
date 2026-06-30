@@ -127,37 +127,24 @@ for idxINprob = 1:length(INprobList)
 
         dataMask = abs(rxPGIRTDSig) < ampThreshold;
         rxPGIRSig = PGIR(rxPGIRTDSig, sigRef, dataMask, transMask, iterCount);
-        pgirK_0 = mean(rxPGIRSig .* conj(txIFFTSig), 1) ./ calcPower(txIFFTSig);
-        pgirTempSNREff = sum(calcPower(pgirK_0 .* txIFFTSig)) ./ sum(calcPower(rxPGIRSig - pgirK_0 .* txIFFTSig));
-
-        pgirSNREff(idxINprob, idxAmpThreshold) = gather(mean(pgirTempSNREff));
+        pgirSNREff(idxINprob, idxAmpThreshold) = gather(calcOutputSNR(rxPGIRSig, txIFFTSig));
 
         rxBlankSig = rxPGIRTDSig;
         idxBlank = abs(rxBlankSig) > ampThreshold;
         rxBlankSig(idxBlank) = 0;
-        blankK_0 = mean(rxBlankSig .* conj(txIFFTSig), 1) ./ calcPower(txIFFTSig);
-        blankTempSNREff = sum(calcPower(blankK_0 .* txIFFTSig)) ./ sum(calcPower(rxBlankSig - blankK_0 .* txIFFTSig));
-
-        blankSNREff(idxINprob, idxAmpThreshold) = gather(mean(blankTempSNREff));
+        blankSNREff(idxINprob, idxAmpThreshold) = gather(calcOutputSNR(rxBlankSig, txIFFTSig));
 
         rxClipSig = rxPGIRTDSig;
         idxClip = abs(rxClipSig) > ampThreshold;
         rxClipSig(idxClip) = ampThreshold .* exp(1j .* angle(rxClipSig(idxClip)));
-        clipK_0 = mean(rxClipSig .* conj(txIFFTSig), 1) ./ calcPower(txIFFTSig);
-        clipTempSNREff = sum(calcPower(clipK_0 .* txIFFTSig)) ./ sum(calcPower(rxClipSig - clipK_0 .* txIFFTSig));
-
-        clipSNREff(idxINprob, idxAmpThreshold) = gather(mean(clipTempSNREff));
+        clipSNREff(idxINprob, idxAmpThreshold) = gather(calcOutputSNR(rxClipSig, txIFFTSig));
 
         rxClipBlankSig = rxPGIRTDSig;
         idxClip = abs(rxClipBlankSig) > ampThreshold;
         idxBlank = abs(rxClipBlankSig) > tClipBlank(ampThreshold);
         rxClipBlankSig(idxClip) = ampThreshold .* exp(1j .* angle(rxClipBlankSig(idxClip)));
         rxClipBlankSig(idxBlank) = 0;
-        clipBlankK_0 = mean(rxClipBlankSig .* conj(txIFFTSig), 1) ./ calcPower(txIFFTSig);
-        clipBlankTempSNREff = sum(calcPower(clipBlankK_0 .* txIFFTSig)) ...
-            ./ sum(calcPower(rxClipBlankSig - clipBlankK_0 .* txIFFTSig));
-
-        clipBlankSNREff(idxINprob, idxAmpThreshold) = gather(mean(clipBlankTempSNREff));
+        clipBlankSNREff(idxINprob, idxAmpThreshold) = gather(calcOutputSNR(rxClipBlankSig, txIFFTSig));
 
         rxDeepClipSig = rxPGIRTDSig;
         idxDeepClip = abs(rxDeepClipSig) > ampThreshold;
@@ -165,18 +152,12 @@ for idxINprob = 1:length(INprobList)
         rxDeepClipSig(idxDeepClip) = (ampThreshold - deepMu .* (abs(rxDeepClipSig(idxDeepClip)) - ampThreshold)) ...
             .* exp(1j .* angle(rxDeepClipSig(idxDeepClip)));
         rxDeepClipSig(idxBlank) = 0;
-        deepClipK_0 = mean(rxDeepClipSig .* conj(txIFFTSig), 1) ./ calcPower(txIFFTSig);
-        deepClipTempSNREff = sum(calcPower(deepClipK_0 .* txIFFTSig)) ./ sum(calcPower(rxDeepClipSig - deepClipK_0 .* txIFFTSig));
-
-        deepClipSNREff(idxINprob, idxAmpThreshold) = gather(mean(deepClipTempSNREff));
+        deepClipSNREff(idxINprob, idxAmpThreshold) = gather(calcOutputSNR(rxDeepClipSig, txIFFTSig));
 
         rxReplaceSig = rxPGIRTDSig;
         idxReplace = abs(rxReplaceSig) > ampThreshold;
         rxReplaceSig(idxReplace) = (sqrt(pi .* sigP ./ 4)) .* exp(1j .* angle(rxReplaceSig(idxReplace)));
-        replaceK_0 = mean(rxReplaceSig .* conj(txIFFTSig), 1) ./ calcPower(txIFFTSig);
-        replaceTempSNREff = sum(calcPower(replaceK_0 .* txIFFTSig)) ./ sum(calcPower(rxReplaceSig - replaceK_0 .* txIFFTSig));
-
-        replaceSNREff(idxINprob, idxAmpThreshold) = gather(mean(replaceTempSNREff));
+        replaceSNREff(idxINprob, idxAmpThreshold) = gather(calcOutputSNR(rxReplaceSig, txIFFTSig));
 
         rxReplaceClipBlankSig = rxPGIRTDSig;
         idxClip = abs(rxReplaceClipBlankSig) > ampThreshold;
@@ -185,11 +166,7 @@ for idxINprob = 1:length(INprobList)
         rxReplaceClipBlankSig(idxClip) = ampThreshold .* exp(1j .* angle(rxReplaceClipBlankSig(idxClip)));
         rxReplaceClipBlankSig(idxReplace) = (sqrt(pi .* sigP ./ 4)) .* exp(1j .* angle(rxReplaceClipBlankSig(idxReplace)));
         rxReplaceClipBlankSig(idxBlank) = 0;
-        replaceClipBlankK_0 = mean(rxReplaceClipBlankSig .* conj(txIFFTSig), 1) ./ calcPower(txIFFTSig);
-        replaceClipBlankTempSNREff = sum(calcPower(replaceClipBlankK_0 .* txIFFTSig)) ...
-            ./ sum(calcPower(rxReplaceClipBlankSig - replaceClipBlankK_0 .* txIFFTSig));
-
-        replaceClipBlankSNREff(idxINprob, idxAmpThreshold) = gather(mean(replaceClipBlankTempSNREff));
+        replaceClipBlankSNREff(idxINprob, idxAmpThreshold) = gather(calcOutputSNR(rxReplaceClipBlankSig, txIFFTSig));
 
     end
 
@@ -255,3 +232,13 @@ xlabel('Unknown Data Thershold (T)');
 ylabel('Output SNR (\gamma), dB');
 title(sprintf('$\\|I_T^\\prime\\|_0:\\|I_T\\|_0=%d:%d$', dataFactor(1), dataFactor(2)), ...
     Interpreter="latex", FontSize=16);
+
+%%
+
+function [outSNR] = calcOutputSNR(inSig, refSig)
+    K_0 = sum(inSig .* conj(refSig), "all") / sum(abs(refSig) .^ 2, "all");
+    sigPower = abs(K_0) ^ 2 * sum(abs(refSig) .^ 2, "all");
+    errPower = sum(abs(inSig - K_0 .* refSig) .^ 2, "all");
+
+    outSNR = sigPower / errPower;
+end
