@@ -6,8 +6,16 @@ addpath(genpath(fullfile(fileparts(mfilename('fullpath')), 'core')));
 % Signal parameter
 fftSize = 32;                   % FFT size
 nullIdx = [];                   % Null Subcarrier Index
+pilotIdx = []; pilotVal = [];   % Pilot Subcarrier Index & Values
+cpLen = fftSize * 1 / 4;        % Cyclic Prefix size
 modOrder = 16;                  % The point amount of constellation
 modType = 'QAM';                % Modulation (Avaliable with 'PSK', 'QAM')
+
+% Channel parameter
+channelLen = 8;                 % Multipath length
+kFactor = 10;                   % LoS vs NLoS power factor
+nTX = 1;                        % Numel of transmitter antenna
+nRX = 1;                        % Numel of receiver antenna
 
 % Simulation parameter
 baseSigCount = 10000;           % testing signal numbers (will multiply a factor)
@@ -15,10 +23,11 @@ sigPerLoop = 100;               % Every loop test signals
 ebn0List = 0:1:20;              % Energy per bit to noise power spectral density ratio(dB)
 
 %% value depends on parameter
-numData = fftSize - length(nullIdx);    % Data subcarrier size
-dataIdx = setdiff((1:fftSize)', nullIdx);
+numData = fftSize - length(nullIdx) - length(pilotIdx);    % Data subcarrier size
+dataIdx = setdiff((1:fftSize)', [nullIdx; pilotIdx]);
 bitsPerModSymbol = log2(modOrder);
 bitsPerOFDMSymbol = numData * bitsPerModSymbol;
+pilotVal = repmat(pilotVal, 1, sigPerLoop);
 
 %% package 
 randomBits = @(sigSize) randi([0 1], sigSize);
@@ -36,6 +45,8 @@ switch (lower(modType))
         error('OFDMMain:invalidModulation', ...
             'The modulation mode must be one of PSK or QAM.');
 end
+cpAdder = @(sig, len) sig([end-len+1:end, 1:end], :, :);
+cpRemover = @(sig, len) sig(len+1:end, :, :);
 
 %% data storage
 ber = zeros(1, length(ebn0List));
@@ -44,7 +55,7 @@ ber = zeros(1, length(ebn0List));
 for idxEbn0 = 1:size(ebn0List, 2)
     % SNR calculation
     snr = ebn0List(idxEbn0) + 10 * log10(bitsPerModSymbol) ...
-        + 10 * log10(numData / fftSize);
+        + 10 * log10(numData / (fftSize + cpLen));
     % Calculate the amount of test signals based on SNR
     totalSigCount = (10 ^ floor(snr / 10)) * baseSigCount;
     % BER storage depends on EbN0
@@ -54,21 +65,27 @@ for idxEbn0 = 1:size(ebn0List, 2)
 
     parfor idxRun = 1:(totalSigCount / sigPerLoop)
         % Tx
-        inDataBits = randomBits([bitsPerOFDMSymbol sigPerLoop]);
+        inDataBits = randomBits([bitsPerOFDMSymbol sigPerLoop nTX]);
         txModSig = modulator(inDataBits, modOrder);
-        txMapSig = scMap(txModSig, fftSize, nullIdx);
+        txMapSig = scMap(txModSig, fftSize, nullIdx, pilotIdx, pilotVal);
         txIFFTSig = sqrt(fftSize) .* ifft(txMapSig, fftSize, 1);
+        txOFDMSig = cpAdder(txIFFTSig, cpLen);
 
-        sigPower = calcPower(txIFFTSig);
+        sigPower = calcPower(txOFDMSig);
+
+        % Channel
+        [fadedSig, channel] = ricianChannel(txOFDMSig, channelLen, kFactor, fftSize, nRX);
 
         % Noise
-        [noise, noisePower] = awgnx(size(txIFFTSig), snr, sigPower, txIFFTSig(1));
-        rxNoisySig = txIFFTSig + noise;
+        [noise, noisePower] = awgnx(size(fadedSig), snr, sigPower, fadedSig(1));
+        rxNoisySig = fadedSig + noise;
 
         % Rx
-        rxFFTSig = 1 / sqrt(fftSize) .* fft(rxNoisySig, fftSize, 1);
-        rxDemapSig = scDemap(rxFFTSig, fftSize, nullIdx);
-        outDataBits = demodulator(rxDemapSig, modOrder);
+        rxNoCPSig = cpRemover(rxNoisySig, cpLen);
+        rxFFTSig = 1 / sqrt(fftSize) .* fft(rxNoCPSig, fftSize, 1);
+        rxDemapSig = scDemap(rxFFTSig, fftSize, nullIdx, pilotIdx);
+        rxEQSig = equalizer(rxDemapSig, channel(dataIdx, :, :, :));
+        outDataBits = demodulator(rxEQSig, modOrder);
 
         % BER calculate
         [~, tempBER(idxRun)] = biterr(inDataBits(:), outDataBits(:));
