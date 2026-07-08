@@ -3,32 +3,39 @@ clc; clear;
 addpath(genpath(fullfile(fileparts(mfilename('fullpath')), '..', 'core')));
 
 %% parameter setting
-fftSize = 256;                   % FFT size
-dataFactor = [7 1]; % data, null ratio
-nullIdx = getNullIdx(fftSize, fftSize / sum(dataFactor) * dataFactor(2)); % Null Subcarrier Index
-[pilotIdx, pilots] = getPilotIdxAndVal(fftSize);
-cpLen = fftSize * 1 / 4;        % Cyclic Prefix size
-channelLen = 8;                 % Multipath length in rayleight distribution (no LoS)
-kFactor = 8;
+% Signal parameter
+fftSize = 256;                  % FFT size
+dataFactor = [7 1];             % data, null ratio
+nullIdx = getNullIdx(fftSize);  % Null Subcarrier Index
+[pilotIdx, pilotVal] = getPilotIdxAndVal(fftSize); % Pilot Subcarrier Index & Values
 modOrder = 16;                  % The point amount of constellation
 modType = 'QAM';                % Modulation (Avaliable with 'PSK', 'QAM')
-nTX = 1;
-nRX = 1;
+
+% Simulation parameter
 baseSigCount = 10000;           % testing signal numbers (will multiply a factor)
-sigPerLoop = 10000;               % Every loop test signals
-ebn0List = 10:1:30;              % Energy per bit to noise power spectral density ratio(dB)
-INsnr = -15;
-INprob = 0.01;
-iterCount = 20;
+sigPerLoop = 10000;             % Every loop test signals
+ebn0List = 10:1:30;             % Energy per bit to noise power spectral density ratio(dB)
+
+% Impulsive Noise parameter
+INsnr = -15;                    % Impulsive-Noise-to-Signal ratio
+INprob = 0.01;                  % Probability of impulsive noise occurring
+
+% PGIR parameter
+iterCount = 20;                 % Number of PGIR iterations
+
 rng(2026);
 gpurng(2026);
 
 %% value depends on parameter
 numData = fftSize - length(nullIdx) - length(pilotIdx);    % Data subcarrier size
 dataIdx = setdiff((1:fftSize)', [nullIdx; pilotIdx]);
-pilots = repmat(pilots, 1, sigPerLoop);
 bitsPerModSymbol = log2(modOrder);
 bitsPerOFDMSymbol = numData * bitsPerModSymbol;
+pilotVal = repmat(pilotVal, 1, sigPerLoop);
+
+% PGIR transform domain mask
+transMask = gpuArray.zeros(fftSize, 1);
+transMask([nullIdx; pilotIdx]) = 1;
 
 %% package 
 randomBits = @(sigSize) gpuArray.randi([0 1], sigSize);
@@ -46,15 +53,6 @@ switch (lower(modType))
         error('OFDMMain:invalidModulation', ...
             'The modulation mode must be one of PSK or QAM.');
 end
-cpAdder = @(sig, len) sig([end-len+1:end, 1:end], :, :);
-cpRemover = @(sig, len) sig(len+1:end, :, :);
-
-transMask = gpuArray.zeros(fftSize, 1);
-transMask([nullIdx; pilotIdx]) = 1;
-transMask = repmat(transMask, 1, sigPerLoop);
-sigRefFD = gpuArray.zeros(fftSize, sigPerLoop);
-sigRefFD(pilotIdx, :) = pilots;
-sigRef = ifft(sigRefFD, fftSize, 1);
 
 %% data storage
 ber = zeros(1, length(ebn0List));
@@ -65,7 +63,7 @@ berINPGIR = zeros(1, length(ebn0List));
 for idxEbn0 = 1:size(ebn0List, 2)
     % SNR calculation
     snr = ebn0List(idxEbn0) + 10 * log10(bitsPerModSymbol) ...
-        + 10 * log10(numData / (fftSize + cpLen));
+        + 10 * log10(numData / fftSize);
     % Calculate the amount of test signals based on SNR
     totalSigCount = (10 ^ floor(snr / 10)) * baseSigCount;
     % BER storage depends on EbN0
@@ -79,39 +77,33 @@ for idxEbn0 = 1:size(ebn0List, 2)
         % Tx
         inDataBits = randomBits([bitsPerOFDMSymbol sigPerLoop nTX]);
         txModSig = modulator(inDataBits, modOrder);
-        txMapSig = scMap(txModSig, fftSize, nullIdx, pilotIdx, pilots);
+        txMapSig = scMap(txModSig, fftSize, nullIdx, pilotIdx, pilotVal);
         txIFFTSig = sqrt(fftSize) .* ifft(txMapSig, fftSize, 1);
-        txOFDMSig = cpAdder(txIFFTSig, cpLen);
 
-        % Channel
-        sigPower = calcPower(txOFDMSig);
-        % [fadedSig, channel] = ricianChannel(txOFDMSig, fftSize, channelLen, kFactor, nRX);
-        fadedSig = txOFDMSig;
-        channel = 1;
+        sigPower = calcPower(txIFFTSig);
 
         % Noise
-        [noise, noisePower] = awgnx(size(fadedSig), snr, sigPower, fadedSig(1));
-        rxNoisySig = fadedSig + noise;
+        [noise, noisePower] = awgnx(size(txIFFTSig), snr, sigPower, txIFFTSig(1));
+        rxNoisySig = txIFFTSig + noise;
 
+        % Impulsive Noise
         [impulsiveNoise, ~, happenIdx] = IN(size(rxNoisySig), INsnr, INprob, sigPower, rxNoisySig(1));
         rxINNoisySig = rxNoisySig + impulsiveNoise;
 
         % Rx
-        rxNoCPSig = cpRemover(rxNoisySig, cpLen);
-        rxFFTSig = 1 / sqrt(fftSize) .* fft(rxNoCPSig, fftSize, 1);
-        rxEQSig = equalizer(rxFFTSig, channel);
-        rxDemapSig = scDemap(rxEQSig, fftSize, nullIdx, pilotIdx);
+        % Orig
+        rxFFTSig = 1 / sqrt(fftSize) .* fft(rxNoisySig, fftSize, 1);
+        rxDemapSig = scDemap(rxFFTSig, fftSize, nullIdx, pilotIdx);
         outDataBits = demodulator(rxDemapSig, modOrder);
 
-        rxINNoCPSig = cpRemover(rxINNoisySig, cpLen);
-        rxINFFTSig = 1 / sqrt(fftSize) .* fft(rxINNoCPSig, fftSize, 1);
-        rxINEQSig = equalizer(rxINFFTSig, channel);
-        rxINDemapSig = scDemap(rxINEQSig, fftSize, nullIdx, pilotIdx);
+        % Orig + IN
+        rxINFFTSig = 1 / sqrt(fftSize) .* fft(rxINNoisySig, fftSize, 1);
+        rxINDemapSig = scDemap(rxINFFTSig, fftSize, nullIdx, pilotIdx);
         outINDataBits = demodulator(rxINDemapSig, modOrder);
 
-        dataMask = gpuArray(~happenIdx((cpLen+1):end, :,:,:));
-        rxPGIRTDSig = sqrt(fftSize) .* ifft(rxINEQSig, fftSize, 1);
-        rxPGIRSig = PGIR(rxPGIRTDSig, sigRef, dataMask, transMask, iterCount);
+        % Orig + IN with PGIR
+        dataMask = gpuArray(~happenIdx);
+        rxPGIRSig = PGIR(rxINNoisySig, txIFFTSig, dataMask, transMask, iterCount);
         rxPGIRFDSig = 1 / sqrt(fftSize) .* fft(rxPGIRSig, fftSize, 1);
         rxPGIRDemapSig = scDemap(rxPGIRFDSig, fftSize, nullIdx, pilotIdx);
         outINPGIRDataBits = demodulator(rxPGIRDemapSig, modOrder);
@@ -141,52 +133,39 @@ xlabel('$E_{b}/N_{0}$', 'Interpreter', 'latex', 'FontSize', 16);
 ylabel('BER', 'FontSize', 16);
 grid on;
 
-%%
+%% plot figure
 idx = 4;
-cpuRxNoCPSig = gather(rxNoCPSig(:, idx));
-cpuRxINNoCPSig = gather(rxINNoCPSig(:, idx));
-cpuRxDemapSig = gather(rxDemapSig(:, idx));
-cpuRxINDemapSig = gather(rxINDemapSig(:, idx));
-cpuRxPGIRDemapSig = gather(rxPGIRDemapSig(:, idx));
-cpuRxPGIRFDSig = gather(rxPGIRFDSig(:, idx));
-cpuRxEQFDSig = gather(rxEQSig(:, idx));
-cpuRxINEQFDSig = gather(rxINEQSig(:, idx));
+cpuRxNoisySig = gather(rxNoisySig(:, idx));
+cpuRxINNoisySig = gather(rxINNoisySig(:, idx));
 cpuRxPGIRTDSig = gather(rxPGIRSig(:, idx));
-cpuRxEQTDSig = sqrt(fftSize) .* ifft(cpuRxEQFDSig);
-cpuRxINEQTDSig = sqrt(fftSize) .* ifft(cpuRxINEQFDSig);
+
+cpuRxFFTSig = gather(rxFFTSig(:, idx));
+cpuRxINFFTSig = gather(rxINFFTSig(:, idx));
+cpuRxPGIRFDSig = gather(rxPGIRFDSig(:, idx));
+
+cpuRxEQTDSig = sqrt(fftSize) .* ifft(cpuRxDemapSig);
+cpuRxINEQTDSig = sqrt(fftSize) .* ifft(cpuRxINDemapSig);
 
 figure
 hold on;
-xtap = 1:size(cpuRxNoCPSig, 1);
+xtap = 1:size(cpuRxNoisySig, 1);
 
-stairs(xtap, abs(cpuRxNoCPSig));
-stairs(xtap, abs(cpuRxINNoCPSig));
-hold off;
-ylabel('|y|');
-xlabel('Sample');
-title('Signal Sample (Before EQ)');
-legend('Orig. Signal', 'Orig. + IN Signal');
-
-figure
-hold on;
-xtap = 1:size(cpuRxEQTDSig, 1);
-
-stairs(xtap, abs(cpuRxEQTDSig));
-stairs(xtap, abs(cpuRxINEQTDSig));
+stairs(xtap, abs(cpuRxNoisySig));
+stairs(xtap, abs(cpuRxINNoisySig));
 stairs(xtap, abs(cpuRxPGIRTDSig));
 hold off;
 ylabel('|y|');
 xlabel('Sample');
-title('Signal Sample (After EQ)');
+title('Signal Sample');
 legend('Orig. Signal', 'Orig. + IN Signal', sprintf('PGIR %d time(s)', iterCount));
 
 figure
 hold on;
-% plot(real(cpuRxDemapSig), imag(cpuRxDemapSig), LineStyle="none", Marker=".", MarkerSize=12);
-% plot(real(cpuRxINDemapSig), imag(cpuRxINDemapSig), LineStyle="none", Marker=".", MarkerSize=12);
-% plot(real(cpuRxPGIRDemapSig), imag(cpuRxPGIRDemapSig), LineStyle="none", Marker=".", MarkerSize=12);
-plot(ifftshift(abs(cpuRxEQFDSig)));
-plot(ifftshift(abs(cpuRxINEQFDSig)));
+% plot(real(cpuRxFFTSig), imag(cpuRxFFTSig), LineStyle="none", Marker=".", MarkerSize=12);
+% plot(real(cpuRxINFFTSig), imag(cpuRxINFFTSig), LineStyle="none", Marker=".", MarkerSize=12);
+% plot(real(cpuRxPGIRFDSig), imag(cpuRxPGIRFDSig), LineStyle="none", Marker=".", MarkerSize=12);
+plot(ifftshift(abs(cpuRxFFTSig)));
+plot(ifftshift(abs(cpuRxINFFTSig)));
 plot(ifftshift(abs(cpuRxPGIRFDSig)));
 hold off;
 ylabel('|y|');

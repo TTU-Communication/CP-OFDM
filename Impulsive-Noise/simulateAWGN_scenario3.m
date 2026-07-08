@@ -3,26 +3,28 @@ clc; clear;
 addpath(genpath(fullfile(fileparts(mfilename('fullpath')), '..', 'core')));
 
 %% parameter setting
-fftSize = 256;                   % FFT size
-dataFactor = [15 1]; % data, null ratio
+% Signal parameter
+fftSize = 256;                  % FFT size
+dataFactor = [7 1];             % data, null ratio
 nullIdx = getNullIdx(fftSize, fftSize / sum(dataFactor) * dataFactor(2)); % Null Subcarrier Index
-cpLen = fftSize * 1 / 4;        % Cyclic Prefix size
-channelLen = 8;                 % Multipath length in rayleight distribution (no LoS)
-kFactor = 8;
 modOrder = 16;                  % The point amount of constellation
 modType = 'QAM';                % Modulation (Avaliable with 'PSK', 'QAM')
-nTX = 1;
-nRX = 1;
+
+% Simulation parameter
 baseSigCount = 10000;           % testing signal numbers (will multiply a factor)
-sigPerLoop = 10000;               % Every loop test signals
-ebn0 = 30;              % Energy per bit to noise power spectral density ratio(dB)
-inCount = 2;
-INsnr = -15;
-INprob = 0.01;
+sigPerLoop = 10000;             % Every loop test signals
+ebn0 = 30;                      % Energy per bit to noise power spectral density ratio(dB)
+
+% Impulsive Noise parameter
+INsnr = -15;                    % Impulsive-Noise-to-Signal ratio
+INprob = 0.01;                  % Probability of impulsive noise occurring
+
+% PGIR parameter
 % iterCountList = [1 10 20 50 100];
 % iterCountList = [200 500 1000 2000];
 % iterCountList = [1 10 20 50 100 200 500 1000 2000];
 iterCountList = [1:10:100 100];
+
 rng(2025);
 gpurng(2025);
 
@@ -31,6 +33,10 @@ numData = fftSize - length(nullIdx);    % Data subcarrier size
 dataIdx = setdiff((1:fftSize)', nullIdx);
 bitsPerModSymbol = log2(modOrder);
 bitsPerOFDMSymbol = numData * bitsPerModSymbol;
+
+% PGIR transform domain mask
+transMask = gpuArray.zeros(fftSize, 1);
+transMask(nullIdx) = 1;
 
 %% package 
 randomBits = @(sigSize) gpuArray.randi([0 1], sigSize);
@@ -48,13 +54,6 @@ switch (lower(modType))
         error('OFDMMain:invalidModulation', ...
             'The modulation mode must be one of PSK or QAM.');
 end
-cpAdder = @(sig, len) sig([end-len+1:end, 1:end], :, :);
-cpRemover = @(sig, len) sig(len+1:end, :, :);
-
-transMask = gpuArray.zeros(fftSize, 1);
-transMask(nullIdx) = 1;
-transMask = repmat(transMask, 1, sigPerLoop);
-sigRef = gpuArray.zeros(fftSize, sigPerLoop);
 
 %% data storage
 nmseList = cell(1, length(iterCountList));
@@ -65,7 +64,7 @@ berINPGIRList = zeros(1, length(iterCountList));
 
 % SNR calculation
 snr = ebn0 + 10 * log10(bitsPerModSymbol) ...
-    + 10 * log10(numData / (fftSize + cpLen));
+    + 10 * log10(numData / fftSize);
 
 fprintf('EbN0 = %2d, max signal number = %d\n', ebn0, baseSigCount);
 
@@ -76,65 +75,43 @@ simProcess = 0;
 fprintf("Start simulation at %s...\n", datetime('now', TimeZone='local', Format='MM-dd HH:mm:ss'));
 
 for idxRun = 1:(baseSigCount / sigPerLoop)
-
     % Tx
-    inDataBits = randomBits([bitsPerOFDMSymbol sigPerLoop nTX]);
+    inDataBits = randomBits([bitsPerOFDMSymbol sigPerLoop]);
     txModSig = modulator(inDataBits, modOrder);
     txMapSig = scMap(txModSig, fftSize, nullIdx);
     txIFFTSig = sqrt(fftSize) .* ifft(txMapSig, fftSize, 1);
-    txOFDMSig = cpAdder(txIFFTSig, cpLen);
-    
-    % Channel
-    sigPower = calcPower(txOFDMSig);
-    % [fadedSig, channel] = ricianChannel(txOFDMSig, fftSize, channelLen, kFactor, nRX);
-    fadedSig = txOFDMSig;
-    channel = 1;
-    
+
+    sigPower = calcPower(txIFFTSig);
+
     % Noise
-    [noise, noisePower] = awgnx(size(fadedSig), snr, sigPower, fadedSig(1));
-    rxNoisySig = fadedSig + noise;
-    
-    % INsnrLinear = sigPower ./ (10 ^ (INsnr / 10));
-    % impulsiveNoise = 1 / 2 * sqrt(INsnrLinear) .* (rand(size(rxNoisySig)) + 1j * rand(size(rxNoisySig)));
-    % orgIndex = randi([1 fftSize], inCount, sigPerLoop);
-    % index = sub2ind(size(rxNoisySig), orgIndex + cpLen, repmat(1:sigPerLoop, inCount, 1));
-    % invIndex = setdiff(1:(numel(rxNoisySig)), index);
-    % impulsiveNoise(invIndex) = 0;
+    [noise, noisePower] = awgnx(size(txIFFTSig), snr, sigPower, txIFFTSig(1));
+    rxNoisySig = txIFFTSig + noise;
+
+    % Impulsive Noise
     [impulsiveNoise, ~, happenIdx] = IN(size(rxNoisySig), INsnr, INprob, sigPower, rxNoisySig(1));
     rxINNoisySig = rxNoisySig + impulsiveNoise;
-    
+
+    % Rx
     % Orig
-    rxNoCPSig = cpRemover(rxNoisySig, cpLen);
-    rxFFTSig = 1 / sqrt(fftSize) .* fft(rxNoCPSig, fftSize, 1);
-    rxEQSig = equalizer(rxFFTSig, channel);
-    rxDemapSig = scDemap(rxEQSig, fftSize, nullIdx);
-    outDataBits = demodulator(rxDemapSig, modOrder);
-    % [~, tempBER(idxRun)] = biterr(inDataBits(:), outDataBits(:));
-    
+    rxFFTSig = 1 / sqrt(fftSize) .* fft(rxNoisySig, fftSize, 1);
+    rxDemapSig = scDemap(rxFFTSig, fftSize, nullIdx);
+
     % Orig + IN
-    rxINNoCPSig = cpRemover(rxINNoisySig, cpLen);
-    rxINFFTSig = 1 / sqrt(fftSize) .* fft(rxINNoCPSig, fftSize, 1);
-    rxINEQSig = equalizer(rxINFFTSig, channel);
-    rxINDemapSig = scDemap(rxINEQSig, fftSize, nullIdx);
-    outINDataBits = demodulator(rxINDemapSig, modOrder);
-    % [~, tempBERIN(idxRun)] = biterr(inDataBits(:), outINDataBits(:));
-    
+    rxINFFTSig = 1 / sqrt(fftSize) .* fft(rxINNoisySig, fftSize, 1);
+    rxINDemapSig = scDemap(rxINFFTSig, fftSize, nullIdx);
+
     % Orig + IN with PGIR
-    % rxIndex = sub2ind(size(rxINFFTSig), orgIndex, repmat(1:sigPerLoop, inCount, 1));
-    % dataMask = ones(fftSize, sigPerLoop);
-    % dataMask(rxIndex) = 0;
-    dataMask = gpuArray(~happenIdx((cpLen+1):end, :,:,:));
-    rxPGIRTDSig = sqrt(fftSize) .* ifft(rxINEQSig, fftSize, 1);
-    
+    dataMask = gpuArray(~happenIdx);
+
     for idxIterCount = 1:length(iterCountList)
         iterCount = iterCountList(idxIterCount);
-    
-        rxPGIRSig = PGIR(rxPGIRTDSig, sigRef, dataMask, transMask, iterCount);
+
+        rxPGIRSig = PGIR(rxINNoisySig, txIFFTSig, dataMask, transMask, iterCount);
         rxPGIRFDSig = 1 / sqrt(fftSize) .* fft(rxPGIRSig, fftSize, 1);
         rxPGIRDemapSig = scDemap(rxPGIRFDSig, fftSize, nullIdx);
         outINPGIRDataBits = demodulator(rxPGIRDemapSig, modOrder);
         nmse = sum(abs(rxPGIRSig - txIFFTSig) .^ 2, 1) ./ sum(abs(txIFFTSig) .^ 2, 1);
-    
+
         nmseList{idxIterCount} = [nmseList{idxIterCount} nmse];
         [~, tempBERINPGIR(idxIterCount, idxRun)] = biterr(inDataBits(:), outINPGIRDataBits(:));
     
@@ -153,8 +130,7 @@ for idxIterCount = 1:length(iterCountList)
     avgNMSEList(idxIterCount) = mean(nmseList{idxIterCount});
 end
 
-%%
-
+%% plot figure
 c = orderedcolors('gem12');
 x_plot = iterCountList;
 
@@ -189,7 +165,6 @@ grid on;
 
 return
 %%
-
 figure
 hold on;
 for i = 1:length(iterCountList)

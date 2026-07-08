@@ -2,42 +2,53 @@ clc; clear;
 
 addpath(genpath(fullfile(fileparts(mfilename('fullpath')), '..', 'core')));
 
-%%
-fftSize = 256;
-% dataFactor = [7 1]; % data, null ratio
-% nullIdx = getNullIdx(fftSize, fftSize / sum(dataFactor) * dataFactor(2));
-nullIdx = getNullIdx(fftSize);
-[pilotIdx, pilotVal] = getPilotIdxAndVal(fftSize);
-iterCount = 50;
-snr = 25;
-sinr = -15;
-INHappenPList = [0.001 0.01 0.1];
-TRange = linspace(0.1, 15, 150);
+%% parameter setting
+% Signal parameter
+fftSize = 256;                  % FFT size
+dataFactor = [7 1];             % data, null ratio
+nullIdx = getNullIdx(fftSize, fftSize / sum(dataFactor) * dataFactor(2)); % Null Subcarrier Index
+pilotIdx = []; pilotVal = [];   % Pilot Subcarrier Index & Values
+% nullIdx = getNullIdx(fftSize);  % Null Subcarrier Index
+% [pilotIdx, pilotVal] = getPilotIdxAndVal(fftSize); % Pilot Subcarrier Index & Values
+modOrder = 16;                  % The point amount of constellation
+modType = 'QAM';                % Modulation (Avaliable with 'PSK', 'QAM')
+
+snr = 25;                       % Noise-to-Signal ratio
+
+% Impulsive Noise parameter
+INsnr = -15;                    % Impulsive-Noise-to-Signal ratio
+INprobList = [0.001 0.01 0.1];  % Probability of impulsive noise occurring
+
+% Non-linear process paramter
+ampThresholdList = 0.1:0.1:15;  % Amplitude threshold
+
+% PGIR parameter
+iterCount = 20;                 % Number of PGIR iterations
 
 Msample = 3000;
 
-%%
+%% suboptimal for PGIR deal with IN
 powerS = (fftSize - length(nullIdx)) / fftSize;
 powerW = powerS / 10 ^ (snr / 10);
-powerG = powerS / 10 ^ (sinr / 10);
+powerG = powerS / 10 ^ (INsnr / 10);
 
 powerList = powerS + [powerW; powerW + powerG];
 
-gammaBlank = nan(length(TRange), length(INHappenPList));
-gammaPGIR  = nan(length(TRange), length(INHappenPList));   % closed-form + K & E corrections
+gammaBlank = nan(length(ampThresholdList), length(INprobList));
+gammaPGIR  = nan(length(ampThresholdList), length(INprobList));   % closed-form + K & E corrections
 
 fprintf('Running  (%d T points, %d MC samples each) ...\n', ...
-        length(TRange), Msample);
+        length(ampThresholdList), Msample);
 
-for idxINp = 1:length(INHappenPList)
-    INp = INHappenPList(idxINp);
+for idxINp = 1:length(INprobList)
+    INp = INprobList(idxINp);
 
     pList = [1 - INp; INp];
 
     t0 = tic;
 
-    parfor TIdx = 1:length(TRange)
-        T = TRange(TIdx);
+    parfor TIdx = 1:length(ampThresholdList)
+        T = ampThresholdList(TIdx);
         expList = exp(-T .^ 2 ./ powerList);
 
         KBlank = 1 - sum(pList .* (1 + T .^ 2 ./ powerList) .* expList, 1);
@@ -60,14 +71,14 @@ for idxINp = 1:length(INHappenPList)
 
 end
 
-%%
+%% polt figure
 colors = orderedcolors('gem12');
 linewidth = 1.5;
 figure; hold on; grid on; box on;
-for idxINp = 1:length(INHappenPList)
-        plot(TRange, snr_db(gammaPGIR(:, idxINp)), '-',  Color=colors(idxINp,:), ...
-        DisplayName=sprintf('p = %g', INHappenPList(idxINp)), LineWidth=linewidth);
-    plot(TRange, snr_db(gammaBlank(:, idxINp)), '--', Color=colors(idxINp,:), ...
+for idxINp = 1:length(INprobList)
+        plot(ampThresholdList, snr_db(gammaPGIR(:, idxINp)), '-',  Color=colors(idxINp,:), ...
+        DisplayName=sprintf('p = %g', INprobList(idxINp)), LineWidth=linewidth);
+    plot(ampThresholdList, snr_db(gammaBlank(:, idxINp)), '--', Color=colors(idxINp,:), ...
         LineWidth=linewidth);
 end
 hold off;
