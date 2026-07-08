@@ -3,16 +3,18 @@ clc; clear;
 addpath(genpath(fullfile(fileparts(mfilename('fullpath')), '..', 'core')));
 
 %% parameter setting
+% Signal parameter
 fftSize = 2048;                 % FFT size
-nullIdx = getNullIdx(fftSize, 2048 - 640, 1);  % Null Subcarrier Index
-cpLen = fftSize * 1 / 8;        % Cyclic Prefix size
-% channelLen = 8;                 % Multipath length in rayleight distribution (no LoS)
+nullIdx = getNullIdx(fftSize, 2048 - 640, 1);   % Null Subcarrier Index
 modOrder = 16;                  % The point amount of constellation
 modType = 'QAM';                % Modulation (Avaliable with 'PSK', 'QAM')
+
+% Simulation parameter
 baseSigCount = 10000;           % testing signal numbers (will multiply a factor)
 sigPerLoop = 100;               % Every loop test signals
 ebn0List = 0:1:20;              % Energy per bit to noise power spectral density ratio(dB)
 
+% Companding parameter
 mu = 1;                         % Companding parameter (mu-law)
 
 %% value depends on parameter
@@ -50,7 +52,7 @@ cmpSigSample = [];
 for idxEbn0 = 1:size(ebn0List, 2)
     % SNR calculation
     snr = ebn0List(idxEbn0) + 10 * log10(bitsPerModSymbol) ...
-        + 10 * log10(numData / (fftSize + cpLen));
+        + 10 * log10(numData / fftSize);
     % Calculate the amount of test signals based on SNR
     totalSigCount = (10 ^ floor(snr / 10)) * baseSigCount;
     % BER storage depends on EbN0
@@ -71,52 +73,39 @@ for idxEbn0 = 1:size(ebn0List, 2)
         txModSig = modulator(inDataBits, modOrder);
         txMapSig = scMap(txModSig, fftSize, nullIdx);
         txIFFTSig = sqrt(fftSize) .* ifft(txMapSig, fftSize, 1);
-        txOFDMSig = cpAdder(txIFFTSig, cpLen);
-        txCmpSig = companding(txOFDMSig, mu);
+        txCmpSig = companding(txIFFTSig, mu);
 
-        % Channel CP-OFDM
-        sigPower = calcPower(txOFDMSig);
-        % [fadedSig, channel] = rayleighChannel(txOFDMSig, channelLen, 1/channelLen, fftSize);
-        fadedSig = txOFDMSig;
-        % Channel Companding OFDM
+        sigPower = calcPower(txIFFTSig);
         cmpSigPower = calcPower(txCmpSig);
-        % [fadedCmpSig, channelCmp] = rayleighChannel(txCmpSig, channelLen, 1/channelLen, fftSize);
-        fadedCmpSig = txCmpSig;
 
         % Noise CP-OFDM
-        noise = awgnx(size(fadedSig), snr, sigPower, fadedSig(1));
+        noise = awgnx(size(txIFFTSig), snr, sigPower, txIFFTSig(1));
         noisePower = calcPower(noise);
-        rxNoisySig = fadedSig + noise;
+        rxNoisySig = txIFFTSig + noise;
         % Noise Companding OFDM
-        noiseCmp = awgnx(size(fadedCmpSig), snr, cmpSigPower, fadedCmpSig(1));
+        noiseCmp = awgnx(size(txCmpSig), snr, cmpSigPower, txCmpSig(1));
         noiseCmpPower = calcPower(noiseCmp);
-        rxNoisyCmpSig = fadedCmpSig + noiseCmp;
+        rxNoisyCmpSig = txCmpSig + noiseCmp;
 
         % Rx CP-OFDM
-        rxNoCPSig = cpRemover(rxNoisySig, cpLen);
-        rxFFTSig = 1 / sqrt(fftSize) .* fft(rxNoCPSig, fftSize, 1);
+        rxFFTSig = 1 / sqrt(fftSize) .* fft(rxNoisySig, fftSize, 1);
         rxDemapSig = scDemap(rxFFTSig, fftSize, nullIdx);
-        % rxEQSig = equalizer(rxDemapSig, channel(setdiff(1:fftSize, nullIdx), :));
-        rxEQSig = rxDemapSig;
-        outDataBits = demodulator(rxEQSig, modOrder);
+        outDataBits = demodulator(rxDemapSig, modOrder);
         % Rx Companding OFDM
         rxDeCmpSig = decompanding(rxNoisyCmpSig, mu);
-        rxNoCPCmpSig = cpRemover(rxDeCmpSig, cpLen);
-        rxFFTCmpSig = 1 / sqrt(fftSize) .* fft(rxNoCPCmpSig, fftSize, 1);
+        rxFFTCmpSig = 1 / sqrt(fftSize) .* fft(rxDeCmpSig, fftSize, 1);
         rxDemapCmpSig = scDemap(rxFFTCmpSig, fftSize, nullIdx);
-        % rxEQCmpSig = equalizer(rxFFTCmpSig, channelCmp(setdiff(1:fftSize, nullIdx), :));
-        rxEQCmpSig = rxDemapCmpSig;
-        outDataBitsCmp = demodulator(rxEQCmpSig, modOrder);
+        outDataBitsCmp = demodulator(rxDemapCmpSig, modOrder);
         
         % BER calculate
         [~, tempBER(idxRun)] = biterr(inDataBits, outDataBits);
         [~, tempBERCmp(idxRun)] = biterr(inDataBits, outDataBitsCmp);
 
         if idxEbn0 == length(ebn0List)
-            paprCP(idxRun, :) = peakAvgDB(txOFDMSig);
+            paprCP(idxRun, :) = peakAvgDB(txIFFTSig);
             paprCmp(idxRun, :) = peakAvgDB(txCmpSig);
             if idxRun == randIdx
-                cpSigSample = [cpSigSample; txOFDMSig(:, 1)];
+                cpSigSample = [cpSigSample; txIFFTSig(:, 1)];
                 cmpSigSample = [cmpSigSample; txCmpSig(:, 1)];
             end
 

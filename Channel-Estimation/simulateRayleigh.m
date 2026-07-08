@@ -4,13 +4,17 @@ addpath(genpath(fullfile(fileparts(mfilename('fullpath')), '..', 'core')));
 
 %% parameter setting
 fftSize = 64;                   % FFT size
-nullIdx = getNullIdx(fftSize);  % Null Subcarrier Index
-[pilotIdx, pilotValue] = getPilotIdxAndVal(fftSize);    % Pilot Subcarrier Index & Value
+nullIdx = getNullIdx(fftSize);                   % Null Subcarrier Index
+[pilotIdx, pilotVal] = getPilotIdxAndVal(fftSize);   % Pilot Subcarrier Index & Values
 cpLen = fftSize * 1 / 4;        % Cyclic Prefix size
-channelLen = 8;                 % Multipath length in rayleight distribution (no LoS)
 modOrder = 16;                  % The point amount of constellation
 modType = 'QAM';                % Modulation (Avaliable with 'PSK', 'QAM')
-baseSigCount = 1000;            % testing signal numbers (will multiply a factor)
+
+% Channel parameter
+channelLen = 8;                 % Multipath length
+
+% Simulation parameter
+baseSigCount = 10000;           % testing signal numbers (will multiply a factor)
 sigPerLoop = 100;               % Every loop test signals
 ebn0List = 0:1:20;              % Energy per bit to noise power spectral density ratio(dB)
 
@@ -18,7 +22,7 @@ ebn0List = 0:1:20;              % Energy per bit to noise power spectral density
 numData = fftSize - length(nullIdx) - length(pilotIdx);     % Data subcarrier size
 bitsPerModSymbol = log2(modOrder);
 bitsPerOFDMSymbol = numData * bitsPerModSymbol;
-pilotValues = repmat(pilotValue, [1 sigPerLoop]);
+pilotVal = repmat(pilotVal, [1 sigPerLoop]);
 
 %% package 
 randomBits = @(r, c) randi([0 1], r, c);
@@ -60,13 +64,13 @@ for idxEbn0 = 1:size(ebn0List, 2)
         % Tx
         inDataBits = randomBits(bitsPerOFDMSymbol, sigPerLoop);
         txModSig = modulator(inDataBits, modOrder);
-        txMapSig = scMap(txModSig, fftSize, nullIdx, pilotIdx, pilotValues);
+        txMapSig = scMap(txModSig, fftSize, nullIdx, pilotIdx, pilotVal);
         txIFFTSig = sqrt(fftSize) .* ifft(txMapSig, fftSize, 1);
         txOFDMSig = cpAdder(txIFFTSig, cpLen);
 
         % Channel
         sigPower = calcPower(txOFDMSig);
-        [fadedSig, channel] = rayleighChannel(txOFDMSig, channelLen, 1/channelLen, fftSize);
+        [fadedSig, channel] = rayleighChannel(txOFDMSig, channelLen, 1 / channelLen, fftSize);
 
         % Noise
         noise = awgnx(size(fadedSig), snr, sigPower, fadedSig(1));
@@ -84,7 +88,7 @@ for idxEbn0 = 1:size(ebn0List, 2)
 
         % estimated channel
         [rxEstDemapSig, rxPilotSig] = scDemap(rxFFTSig, fftSize, nullIdx, pilotIdx);
-        estChannel = channelEstimator(rxPilotSig ./ pilotValue, fftSize, nullIdx, pilotIdx);
+        estChannel = channelEstimator(rxPilotSig ./ pilotVal, fftSize, nullIdx, pilotIdx);
         rxEstEQSig = equalizer(rxEstDemapSig, estChannel);
         estOutDataBits = demodulator(rxEstEQSig, modOrder);
 
