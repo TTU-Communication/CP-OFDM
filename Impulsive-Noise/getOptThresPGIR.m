@@ -50,6 +50,10 @@ function [Topt, gammaOpt_dB, info] = getOptThresPGIR(Px, Pw, Pg, p, N, nullIdx, 
 %   'Tmin','Tmax','targetStep' : threshold grid.  Defaults are scaled by
 %                                 sqrt(Px): [0.1, 8, 0.1]*sqrt(Px).
 %   'M'                : Monte-Carlo OFDM blocks per seed.        (1000)
+%   'OSFactor'         : oversampling normalization factor.           (1)
+%                        Used only when generating normalized OFDM
+%                        Monte-Carlo signals; PGIR projections and
+%                        analytic K/E expressions are unchanged.
 %   'seed'             : first random seed.                          (0)
 %   'nSeeds'           : independent CRN pools combined per T.        (1)
 %   'nIter'            : nonnegative integer, or Inf.              (Inf)
@@ -74,6 +78,7 @@ function [Topt, gammaOpt_dB, info] = getOptThresPGIR(Px, Pw, Pg, p, N, nullIdx, 
     ip.addParameter('Tmax', []);
     ip.addParameter('targetStep', []);
     ip.addParameter('M', 1000);
+    ip.addParameter('OSFactor', 1);
     ip.addParameter('seed', 0);
     ip.addParameter('nSeeds', 1);
     ip.addParameter('nIter', Inf);
@@ -92,6 +97,8 @@ function [Topt, gammaOpt_dB, info] = getOptThresPGIR(Px, Pw, Pg, p, N, nullIdx, 
     validateattributes(p,  {'numeric'}, {'scalar','real','finite','>=',0,'<=',1});
     validateattributes(N,  {'numeric'}, {'scalar','integer','>=',2});
     validateattributes(o.M, {'numeric'}, {'scalar','integer','>=',1});
+    validateattributes(o.OSFactor, {'numeric'}, ...
+        {'scalar','real','finite','positive'});
     validateattributes(o.nSeeds, {'numeric'}, {'scalar','integer','>=',1});
     validateattributes(o.steadyStateFallbackIter, {'numeric'}, ...
         {'scalar','integer','>=',0});
@@ -150,7 +157,7 @@ function [Topt, gammaOpt_dB, info] = getOptThresPGIR(Px, Pw, Pg, p, N, nullIdx, 
     pools = cell(1, o.nSeeds);
     for s = 1:o.nSeeds
         pools{s} = make_pool(N, o.M, o.seed + s - 1, Px, Pw, Pg, p, ...
-                             knownMask, knownFreq, F);
+                             knownMask, knownFreq, F, o.OSFactor);
     end
 
     Tgrid = threshold_grid(o.Tmin, o.Tmax, o.targetStep);
@@ -270,6 +277,7 @@ function [Topt, gammaOpt_dB, info] = getOptThresPGIR(Px, Pw, Pg, p, N, nullIdx, 
     info.nIter = o.nIter;
     info.initialization = o.initialization;
     info.M_per_seed = o.M;
+    info.OSFactor = o.OSFactor;
     info.nSeeds = o.nSeeds;
     info.M_total = o.M * o.nSeeds;
     info.Knull = numel(nullIdx);
@@ -322,7 +330,8 @@ function [powerE, errorSigCon, st] = reconErr(fftSize, nullMask, T, p, ...
 
     opt = struct('pool', [], 'A', [], 'knownTD', [], ...
                  'initialization', 'zero', 'fallbackIter', 50, ...
-                 'rcondTol', 1e-10, 'verifyDirectMC', false);
+                 'rcondTol', 1e-10, 'verifyDirectMC', false, ...
+                 'OSFactor', 1);
     if ~isempty(varargin)
         userOpt = varargin{1};
         if ~isstruct(userOpt)
@@ -350,7 +359,7 @@ function [powerE, errorSigCon, st] = reconErr(fftSize, nullMask, T, p, ...
     if isempty(opt.pool)
         F = fft(eye(fftSize))/sqrt(fftSize);
         opt.pool = make_pool(fftSize, Msample, 0, powerS, powerW, powerG, p, ...
-                             knownMask, knownFreq, F);
+                             knownMask, knownFreq, F, opt.OSFactor);
     end
 
     st = reconErr_pool(opt.pool, T, opt.A, opt.knownTD, iterCount, ...
@@ -500,10 +509,16 @@ function xhatFlag = finite_pgir_flagged(Aff, rhs, knownFlag, initialization, L)
 end
 
 % ========================================================================
-% Generate Gaussian active-subcarrier OFDM samples. This makes every x_n
-% circular Gaussian with full second moment Px, matching the manuscript.
+% Generate Gaussian active-subcarrier OFDM samples. OSFactor is applied
+% only to the OFDM normalization, matching
+%
+%   x = sqrt(OSFactor) F^H X.
+%
+% The active-subcarrier variance is reduced by the same factor so that
+% every x_n still has the requested full second moment Px. For
+% OSFactor = 1, this reduces exactly to the original implementation.
 % ========================================================================
-function pool = make_pool(N, M, seed, Px, Pw, Pg, p, knownMask, knownFreq, F)
+function pool = make_pool(N, M, seed, Px, Pw, Pg, p, knownMask, knownFreq, F, OSFactor)
     rng(seed, 'twister');
     randomIdx = find(~knownMask);
     if isempty(randomIdx)
@@ -511,9 +526,16 @@ function pool = make_pool(N, M, seed, Px, Pw, Pg, p, knownMask, knownFreq, F)
             'At least one transform-domain data subcarrier is required.');
     end
 
+    if nargin < 11 || isempty(OSFactor)
+        OSFactor = 1;
+    end
+    validateattributes(OSFactor, {'numeric'}, ...
+        {'scalar','real','finite','positive'});
+
     knownEnergy = sum(abs(knownFreq(knownMask)).^2);
-    Psub = (N*Px - knownEnergy) / numel(randomIdx);
-    if Psub < -100*eps(max(N*Px,1))
+    targetFreqEnergy = N*Px/OSFactor;
+    Psub = (targetFreqEnergy - knownEnergy) / numel(randomIdx);
+    if Psub < -100*eps(max(targetFreqEnergy,1))
         error('PGIRmanuscript:PowerBudget', ...
             'Known pilot energy exceeds the requested time-domain power Px.');
     end
@@ -522,7 +544,7 @@ function pool = make_pool(N, M, seed, Px, Pw, Pg, p, knownMask, knownFreq, F)
     X = repmat(knownFreq, 1, M);
     X(randomIdx,:) = (randn(numel(randomIdx),M) + 1i*randn(numel(randomIdx),M)) ...
                      * sqrt(Psub/2);
-    pool.x = F' * X;
+    pool.x = sqrt(OSFactor) * (F' * X);
 
     W = (randn(N,M) + 1i*randn(N,M)) * sqrt(Pw/2);
     G = (randn(N,M) + 1i*randn(N,M)) * sqrt(Pg/2);
