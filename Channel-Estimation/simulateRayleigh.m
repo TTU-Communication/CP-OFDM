@@ -15,18 +15,19 @@ channelLen = 8;                 % Multipath length
 
 % Simulation parameter
 baseSigCount = 10000;           % testing signal numbers (will multiply a factor)
-sigPerLoop = 100;               % Every loop test signals
+sigBatchPerLoop = 100;               % Every loop test signals
 ebn0List = 0:1:20;              % Energy per bit to noise power spectral density ratio(dB)
 
 %% value depends on parameter
 numData = fftSize - length(nullIdx) - length(pilotIdx);     % Data subcarrier size
 bitsPerModSymbol = log2(modOrder);
 bitsPerOFDMSymbol = numData * bitsPerModSymbol;
-pilotVal = repmat(pilotVal, [1 sigPerLoop]);
+pilotVal = repmat(pilotVal, [1 sigBatchPerLoop]);
+
+sigPowerRef = (numData + length(pilotIdx)) / fftSize;
 
 %% package 
 randomBits = @(r, c) randi([0 1], r, c);
-calcPower = @(sig) sum(abs(sig) .^ 2) / size(sig, 1);
 switch (lower(modType))
     case 'psk'
         modulator = @(input, M) pskmod(input, M, InputType="bit");
@@ -55,26 +56,25 @@ for idxEbn0 = 1:size(ebn0List, 2)
     % Calculate the amount of test signals based on SNR
     totalSigCount = (10 ^ floor(snr / 10)) * baseSigCount;
     % BER storage depends on EbN0
-    tempBER = zeros(1, totalSigCount / sigPerLoop);
-    tempEstBER = zeros(1, totalSigCount / sigPerLoop);
+    tempBER = zeros(1, totalSigCount / sigBatchPerLoop);
+    tempEstBER = zeros(1, totalSigCount / sigBatchPerLoop);
 
     fprintf('EbN0 = %2d, max signal number = %d\n', ebn0List(idxEbn0), totalSigCount);
 
-    parfor idxRun = 1:(totalSigCount / sigPerLoop)
+    parfor idxRun = 1:(totalSigCount / sigBatchPerLoop)
         % Tx
-        inDataBits = randomBits(bitsPerOFDMSymbol, sigPerLoop);
+        inDataBits = randomBits(bitsPerOFDMSymbol, sigBatchPerLoop);
         txModSig = modulator(inDataBits, modOrder);
         txMapSig = scMap(txModSig, fftSize, nullIdx, pilotIdx, pilotVal);
         txIFFTSig = sqrt(fftSize) .* ifft(txMapSig, fftSize, 1);
         txOFDMSig = cpAdder(txIFFTSig, cpLen);
 
         % Channel
-        sigPower = calcPower(txOFDMSig);
         [fadedSig, channel] = rayleighChannel(txOFDMSig, channelLen, 1 / channelLen, fftSize);
 
         % Noise
-        noise = awgnx(size(fadedSig), snr, sigPower, fadedSig(1));
-        noisePower = calcPower(noise);
+        noisePower = sigPowerRef / (10 ^ (snr / 10));
+        noise = awgnx(size(fadedSig), noisePower, fadedSig(1));
         rxNoisySig = fadedSig + noise;
 
         % Rx

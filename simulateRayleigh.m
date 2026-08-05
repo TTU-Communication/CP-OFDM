@@ -28,9 +28,10 @@ bitsPerModSymbol = log2(modOrder);
 bitsPerOFDMSymbol = numData * bitsPerModSymbol;
 pilotVal = repmat(pilotVal, 1, sigPerLoop);
 
+sigPowerRef = (numData + length(pilotIdx)) / fftSize;
+
 %% package 
 randomBits = @(sigSize) randi([0 1], sigSize);
-calcPower = @(sig) sum(sum(abs(sig) .^ 2) / size(sig, 1), 3);
 switch (lower(modType))
     case 'psk'
         modulator = @(input, M) pskmod(input, M, InputType="bit");
@@ -53,7 +54,7 @@ ber = zeros(1, length(ebn0List));
 %% CP-OFDM
 for idxEbn0 = 1:size(ebn0List, 2)
     % SNR calculation
-    snr = ebn0List(idxEbn0) + 10 * log10(bitsPerModSymbol) ...
+    snr = ebn0List(idxEbn0) + 10 * log10(nTX) + 10 * log10(bitsPerModSymbol) ...
         + 10 * log10(numData / (fftSize + cpLen));
     % Calculate the amount of test signals based on SNR
     totalSigCount = (10 ^ floor(snr / 10)) * baseSigCount;
@@ -68,22 +69,21 @@ for idxEbn0 = 1:size(ebn0List, 2)
         txModSig = modulator(inDataBits, modOrder);
         txMapSig = scMap(txModSig, fftSize, nullIdx, pilotIdx, pilotVal);
         txIFFTSig = sqrt(fftSize) .* ifft(txMapSig, fftSize, 1);
-        txOFDMSig = cpAdder(txIFFTSig, cpLen);
-
-        sigPower = calcPower(txOFDMSig);
+        txOFDMSig = cpAdder(txIFFTSig, cpLen) / sqrt(nTX);
 
         % Channel
         [fadedSig, channel] = rayleighChannel(txOFDMSig, channelLen, 1 / channelLen, fftSize, nRX);
 
         % Noise
-        [noise, noisePower] = awgnx(size(fadedSig), snr, sigPower, fadedSig(1));
+        noisePower = sigPowerRef / (10 ^ (snr / 10));
+        noise = awgnx(size(fadedSig), noisePower, fadedSig(1));
         rxNoisySig = fadedSig + noise;
 
         % Rx
         rxNoCPSig = cpRemover(rxNoisySig, cpLen);
         rxFFTSig = 1 / sqrt(fftSize) .* fft(rxNoCPSig, fftSize, 1);
         rxDemapSig = scDemap(rxFFTSig, fftSize, nullIdx, pilotIdx);
-        rxEQSig = equalizer(rxDemapSig, channel(dataIdx, :, :, :));
+        rxEQSig = equalizer(rxDemapSig, channel(dataIdx, :, :, :) / sqrt(nTX));
         outDataBits = demodulator(rxEQSig, modOrder);
 
         % BER calculate

@@ -11,7 +11,7 @@ modType = 'QAM';                % Modulation (Avaliable with 'PSK', 'QAM')
 
 % Simulation parameter
 baseSigCount = 10000;           % testing signal numbers (will multiply a factor)
-sigPerLoop = 100;               % Every loop test signals
+sigBatchPerLoop = 100;               % Every loop test signals
 ebn0List = 0:1:20;              % Energy per bit to noise power spectral density ratio(dB)
 
 % Companding parameter
@@ -22,9 +22,11 @@ numData = fftSize - length(nullIdx);                  % Data subcarrier size
 bitsPerModSymbol = log2(modOrder);
 bitsPerOFDMSymbol = numData * bitsPerModSymbol;
 
+sigPowerRef = numData / fftSize;
+
 %% package 
 randomBits = @(r, c) randi([0 1], r, c);
-calcPower = @(sig) sum(abs(sig) .^ 2) / size(sig, 1);
+calcPower = @(sig) sum(abs(sig) .^ 2, "all") / numel(sig);
 switch (lower(modType))
     case 'psk'
         modulator = @(input, M) pskmod(input, M, InputType="bit");
@@ -56,20 +58,20 @@ for idxEbn0 = 1:size(ebn0List, 2)
     % Calculate the amount of test signals based on SNR
     totalSigCount = (10 ^ floor(snr / 10)) * baseSigCount;
     % BER storage depends on EbN0
-    tempBER = zeros(1, totalSigCount / sigPerLoop);
-    tempBERCmp = zeros(1, totalSigCount / sigPerLoop);
+    tempBER = zeros(1, totalSigCount / sigBatchPerLoop);
+    tempBERCmp = zeros(1, totalSigCount / sigBatchPerLoop);
 
     fprintf('EbN0 = %2d, max signal number = %d\n', ebn0List(idxEbn0), totalSigCount);
 
     if idxEbn0 == length(ebn0List)
-        paprCP = zeros(totalSigCount / sigPerLoop, sigPerLoop);
-        paprCmp = zeros(totalSigCount / sigPerLoop, sigPerLoop);
-        randIdx = randi([1 totalSigCount / sigPerLoop], 1);
+        paprCP = zeros(totalSigCount / sigBatchPerLoop, sigBatchPerLoop);
+        paprCmp = zeros(totalSigCount / sigBatchPerLoop, sigBatchPerLoop);
+        randIdx = randi([1 totalSigCount / sigBatchPerLoop], 1);
     end
 
-    parfor idxRun = 1:(totalSigCount / sigPerLoop)
+    parfor idxRun = 1:(totalSigCount / sigBatchPerLoop)
         % Tx
-        inDataBits = randomBits(bitsPerOFDMSymbol, sigPerLoop);
+        inDataBits = randomBits(bitsPerOFDMSymbol, sigBatchPerLoop);
         txModSig = modulator(inDataBits, modOrder);
         txMapSig = scMap(txModSig, fftSize, nullIdx);
         txIFFTSig = sqrt(fftSize) .* ifft(txMapSig, fftSize, 1);
@@ -79,12 +81,12 @@ for idxEbn0 = 1:size(ebn0List, 2)
         cmpSigPower = calcPower(txCmpSig);
 
         % Noise CP-OFDM
-        noise = awgnx(size(txIFFTSig), snr, sigPower, txIFFTSig(1));
-        noisePower = calcPower(noise);
+        noisePower = sigPower / (10 ^ (snr / 10));
+        noise = awgnx(size(txIFFTSig), noisePower, txIFFTSig(1));
         rxNoisySig = txIFFTSig + noise;
         % Noise Companding OFDM
-        noiseCmp = awgnx(size(txCmpSig), snr, cmpSigPower, txCmpSig(1));
-        noiseCmpPower = calcPower(noiseCmp);
+        noiseCmpPower = cmpSigPower / (10 ^ (snr / 10));
+        noiseCmp = awgnx(size(txCmpSig), noiseCmpPower, txCmpSig(1));
         rxNoisyCmpSig = txCmpSig + noiseCmp;
 
         % Rx CP-OFDM

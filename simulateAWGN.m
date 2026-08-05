@@ -20,9 +20,10 @@ dataIdx = setdiff((1:fftSize)', nullIdx);
 bitsPerModSymbol = log2(modOrder);
 bitsPerOFDMSymbol = numData * bitsPerModSymbol;
 
+sigPowerRef = numData / fftSize;
+
 %% package 
 randomBits = @(sigSize) randi([0 1], sigSize);
-calcPower = @(sig) sum(sum(abs(sig) .^ 2) / size(sig, 1), 3);
 switch (lower(modType))
     case 'psk'
         modulator = @(input, M) pskmod(input, M, InputType="bit");
@@ -59,10 +60,9 @@ for idxEbn0 = 1:size(ebn0List, 2)
         txMapSig = scMap(txModSig, fftSize, nullIdx);
         txIFFTSig = sqrt(fftSize) .* ifft(txMapSig, fftSize, 1);
 
-        sigPower = calcPower(txIFFTSig);
-
         % Noise
-        [noise, noisePower] = awgnx(size(txIFFTSig), snr, sigPower, txIFFTSig(1));
+        noisePower = sigPowerRef / (10 ^ (snr / 10));
+        noise = awgnx(size(txIFFTSig), noisePower, txIFFTSig(1));
         rxNoisySig = txIFFTSig + noise;
 
         % Rx

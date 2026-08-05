@@ -3,8 +3,8 @@ function [outSig] = equalizer(inSig, H, noisePower, sigPower)
     arguments
         inSig (:,:,:) {mustBeArrayOrGPU, mustBeFinite, mustBeNonempty}
         H (:,:,:,:) {mustBeArrayOrGPU, mustBeFinite, mustBeNonempty}
-        noisePower (1,:,:) {mustBeArrayOrGPU, mustBeFinite, mustBeNonempty} = 0
-        sigPower (1,:,:) {mustBeArrayOrGPU, mustBeFinite, mustBeNonempty} = 1
+        noisePower (1,:,:) {mustBeArrayOrGPU, mustBeFinite} = []
+        sigPower (1,:,:) {mustBeArrayOrGPU, mustBeFinite} = []
     end
 
     [sigSample, sigBatch, nRX] = size(inSig);
@@ -15,31 +15,53 @@ function [outSig] = equalizer(inSig, H, noisePower, sigPower)
     % change dimension from [Nsp Ns Nrx Ntx] to [Nrx Ntx Nsp Ns]
     HPage = permute(H, [3 4 1 2]);
 
-    if noisePower(1) ~= 0
-        % change dimension from [1 Ns Nrx] to [Nrx 1 Nsp Ns]
-        noiseVar = reshape(permute(repmat(noisePower, [sigSample 1 1]), [3 1 2]), [nRX 1 sigSample sigBatch]);
-        if ndims(noisePower) == 3
-            % diagonal matrices based on every column vector
-            noiseVar = eye(nRX) .* noiseVar;
+    if ~isempty(noisePower)
+        if ~isscalar(noisePower)
+            % change dimension from [1 Ns Nrx] to [Nrx 1 Nsp Ns]
+            noiseVar = reshape(permute(repmat(noisePower, [sigSample 1 1]), [3 1 2]), [nRX 1 sigSample sigBatch]);
+            if ndims(noisePower) == 3
+                % diagonal matrices based on every column vector
+                noiseVar = eye(nRX) .* noiseVar;
+            end
+            % calculate the inverse matrix
+            noiseVarInv = pageinv(noiseVar);
+        else
+            % change dimension from [1 Ns Nrx] to [Nrx 1 Nsp Ns]
+            noiseVar = reshape(permute(repmat(noisePower, [sigSample 1 nRX]), [3 1 2]), [nRX 1 sigSample]);
+            if nRX > 1
+                % diagonal matrices based on every column vector
+                noiseVar = eye(nRX) .* noiseVar;
+            end
+            % calculate the inverse matrix
+            noiseVarInv = pageinv(noiseVar);
         end
-        % calculate the inverse matrix
-        noiseVarInv = pageinv(noiseVar);
     else
         % set to identity matrix for each signals
         noiseVar = 0;
         noiseVarInv = repmat(eye(nRX), [1 1 sigSample sigBatch]);
     end
 
-    if sigPower(1) ~= 1
-        % change dimension from [1 Ns Ntx] to [Ntx 1 Nsp Ns]
-        sigVar = reshape(permute(repmat(sigPower, [sigSample 1 1]), [3 1 2]), [nTX 1 sigSample sigBatch]);
-        if ndims(sigPower) == 3
-            % diagonal matrices based on every column vector
-            sigVar = eye(nTX) .* sigVar;
+    if ~isempty(sigPower)
+        if ~isscalar(sigPower)
+            % change dimension from [1 Ns Ntx] to [Ntx 1 Nsp Ns]
+            sigVar = reshape(permute(repmat(sigPower, [sigSample 1 1]), [3 1 2]), [nTX 1 sigSample sigBatch]);
+            if ndims(sigPower) == 3
+                % diagonal matrices based on every column vector
+                sigVar = eye(nTX) .* sigVar;
+            end
+            % calculate the inverse matrix
+            sigVarInv = pageinv(sigVar);
+        else
+            % change dimension from [1 Ns Ntx] to [Ntx 1 Nsp Ns]
+            sigVar = reshape(permute(repmat(sigPower, [sigSample 1 nTX]), [3 1 2]), [nTX 1 sigSample]);
+            if nTX > 1
+                % diagonal matrices based on every column vector
+                sigVar = eye(nTX) .* sigVar;
+            end
+            % calculate the inverse matrix
+            sigVarInv = pageinv(sigVar);
         end
-        % calculate the inverse matrix
-        sigVarInv = pageinv(sigVar);
-    elseif noisePower(1) ~= 0
+    elseif ~isempty(noisePower)
         % set to identity matrix for each signals if noisePower is provided
         sigVarInv = repmat(eye(nTX), [1 1 sigSample sigBatch]);
     else
