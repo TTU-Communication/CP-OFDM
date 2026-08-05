@@ -22,22 +22,6 @@ bitsPerOFDMSymbol = numData * bitsPerModSymbol;
 
 sigPowerRef = numData / fftSize;
 
-%% package 
-randomBits = @(sigSize) randi([0 1], sigSize);
-switch (lower(modType))
-    case 'psk'
-        modulator = @(input, M) pskmod(input, M, InputType="bit");
-        demodulator = @(input, M) pskdemod(input, M, OutputType="bit");
-    case 'qam'
-        modulator = @(input, M) qammod(input, M, InputType="bit", ...
-            UnitAveragePower=true);
-        demodulator = @(input, M) qamdemod(input, M, OutputType="bit", ...
-            UnitAveragePower=true);
-    otherwise
-        error('OFDMMain:invalidModulation', ...
-            'The modulation mode must be one of PSK or QAM.');
-end
-
 %% data storage
 ber = zeros(1, length(ebn0List));
 
@@ -56,7 +40,7 @@ for idxEbn0 = 1:size(ebn0List, 2)
     parfor idxRun = 1:(totalSigCount / sigPerLoop)
         % Tx
         inDataBits = randomBits([bitsPerOFDMSymbol sigPerLoop]);
-        txModSig = modulator(inDataBits, modOrder);
+        txModSig = modulator(inDataBits, modOrder, lower(modType));
         txMapSig = scMap(txModSig, fftSize, nullIdx);
         txIFFTSig = sqrt(fftSize) .* ifft(txMapSig, fftSize, 1);
 
@@ -68,7 +52,7 @@ for idxEbn0 = 1:size(ebn0List, 2)
         % Rx
         rxFFTSig = 1 / sqrt(fftSize) .* fft(rxNoisySig, fftSize, 1);
         rxDemapSig = scDemap(rxFFTSig, fftSize, nullIdx);
-        outDataBits = demodulator(rxDemapSig, modOrder);
+        outDataBits = demodulator(rxDemapSig, modOrder, lower(modType));
 
         % BER calculate
         [~, tempBER(idxRun)] = biterr(inDataBits(:), outDataBits(:));

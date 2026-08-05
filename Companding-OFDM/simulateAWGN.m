@@ -25,23 +25,7 @@ bitsPerOFDMSymbol = numData * bitsPerModSymbol;
 sigPowerRef = numData / fftSize;
 
 %% package 
-randomBits = @(r, c) randi([0 1], r, c);
 calcPower = @(sig) sum(abs(sig) .^ 2, "all") / numel(sig);
-switch (lower(modType))
-    case 'psk'
-        modulator = @(input, M) pskmod(input, M, InputType="bit");
-        demodulator = @(input, M) pskdemod(input, M, OutputType="bit");
-    case 'qam'
-        modulator = @(input, M) qammod(input, M, InputType="bit", ...
-            UnitAveragePower=true);
-        demodulator = @(input, M) qamdemod(input, M, OutputType="bit", ...
-            UnitAveragePower=true);
-    otherwise
-        error('OFDMMain:invalidModulation', ...
-            'The modulation mode must be one of PSK or QAM.');
-end
-cpAdder = @(sig, len) [sig(end-len+1:end, :); sig];
-cpRemover = @(sig, len) sig(len+1:end, :);
 peakAvgDB = @(sig) 10 * log10(max(abs(sig) .^ 2) ./ mean(abs(sig) .^ 2));
 
 %% data storage
@@ -72,7 +56,7 @@ for idxEbn0 = 1:size(ebn0List, 2)
     parfor idxRun = 1:(totalSigCount / sigBatchPerLoop)
         % Tx
         inDataBits = randomBits(bitsPerOFDMSymbol, sigBatchPerLoop);
-        txModSig = modulator(inDataBits, modOrder);
+        txModSig = modulator(inDataBits, modOrder, lower(modType));
         txMapSig = scMap(txModSig, fftSize, nullIdx);
         txIFFTSig = sqrt(fftSize) .* ifft(txMapSig, fftSize, 1);
         txCmpSig = companding(txIFFTSig, mu);
@@ -92,12 +76,12 @@ for idxEbn0 = 1:size(ebn0List, 2)
         % Rx CP-OFDM
         rxFFTSig = 1 / sqrt(fftSize) .* fft(rxNoisySig, fftSize, 1);
         rxDemapSig = scDemap(rxFFTSig, fftSize, nullIdx);
-        outDataBits = demodulator(rxDemapSig, modOrder);
+        outDataBits = demodulator(rxDemapSig, modOrder, lower(modType));
         % Rx Companding OFDM
         rxDeCmpSig = decompanding(rxNoisyCmpSig, mu);
         rxFFTCmpSig = 1 / sqrt(fftSize) .* fft(rxDeCmpSig, fftSize, 1);
         rxDemapCmpSig = scDemap(rxFFTCmpSig, fftSize, nullIdx);
-        outDataBitsCmp = demodulator(rxDemapCmpSig, modOrder);
+        outDataBitsCmp = demodulator(rxDemapCmpSig, modOrder, lower(modType));
         
         % BER calculate
         [~, tempBER(idxRun)] = biterr(inDataBits, outDataBits);

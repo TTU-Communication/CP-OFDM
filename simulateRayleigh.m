@@ -30,24 +30,6 @@ pilotVal = repmat(pilotVal, 1, sigPerLoop);
 
 sigPowerRef = (numData + length(pilotIdx)) / fftSize;
 
-%% package 
-randomBits = @(sigSize) randi([0 1], sigSize);
-switch (lower(modType))
-    case 'psk'
-        modulator = @(input, M) pskmod(input, M, InputType="bit");
-        demodulator = @(input, M) pskdemod(input, M, OutputType="bit");
-    case 'qam'
-        modulator = @(input, M) qammod(input, M, InputType="bit", ...
-            UnitAveragePower=true);
-        demodulator = @(input, M) qamdemod(input, M, OutputType="bit", ...
-            UnitAveragePower=true);
-    otherwise
-        error('OFDMMain:invalidModulation', ...
-            'The modulation mode must be one of PSK or QAM.');
-end
-cpAdder = @(sig, len) sig([end-len+1:end, 1:end], :, :);
-cpRemover = @(sig, len) sig(len+1:end, :, :);
-
 %% data storage
 ber = zeros(1, length(ebn0List));
 
@@ -66,7 +48,7 @@ for idxEbn0 = 1:size(ebn0List, 2)
     parfor idxRun = 1:(totalSigCount / sigPerLoop)
         % Tx
         inDataBits = randomBits([bitsPerOFDMSymbol sigPerLoop nTX]);
-        txModSig = modulator(inDataBits, modOrder);
+        txModSig = modulator(inDataBits, modOrder, lower(modType));
         txMapSig = scMap(txModSig, fftSize, nullIdx, pilotIdx, pilotVal);
         txIFFTSig = sqrt(fftSize) .* ifft(txMapSig, fftSize, 1);
         txOFDMSig = cpAdder(txIFFTSig, cpLen) / sqrt(nTX);
@@ -84,7 +66,7 @@ for idxEbn0 = 1:size(ebn0List, 2)
         rxFFTSig = 1 / sqrt(fftSize) .* fft(rxNoCPSig, fftSize, 1);
         rxDemapSig = scDemap(rxFFTSig, fftSize, nullIdx, pilotIdx);
         rxEQSig = equalizer(rxDemapSig, channel(dataIdx, :, :, :) / sqrt(nTX));
-        outDataBits = demodulator(rxEQSig, modOrder);
+        outDataBits = demodulator(rxEQSig, modOrder, lower(modType));
 
         % BER calculate
         [~, tempBER(idxRun)] = biterr(inDataBits(:), outDataBits(:));

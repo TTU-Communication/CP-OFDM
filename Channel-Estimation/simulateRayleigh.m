@@ -26,24 +26,6 @@ pilotVal = repmat(pilotVal, [1 sigBatchPerLoop]);
 
 sigPowerRef = (numData + length(pilotIdx)) / fftSize;
 
-%% package 
-randomBits = @(r, c) randi([0 1], r, c);
-switch (lower(modType))
-    case 'psk'
-        modulator = @(input, M) pskmod(input, M, InputType="bit");
-        demodulator = @(input, M) pskdemod(input, M, OutputType="bit");
-    case 'qam'
-        modulator = @(input, M) qammod(input, M, InputType="bit", ...
-            UnitAveragePower=true);
-        demodulator = @(input, M) qamdemod(input, M, OutputType="bit", ...
-            UnitAveragePower=true);
-    otherwise
-        error('OFDMMain:invalidModulation', ...
-            'The modulation mode must be one of PSK or QAM.');
-end
-cpAdder = @(sig, len) [sig(end-len+1:end, :); sig];
-cpRemover = @(sig, len) sig(len+1:end, :);
-
 %% data storage
 ber = zeros(1, length(ebn0List));
 estBER = zeros(1, length(ebn0List));
@@ -64,7 +46,7 @@ for idxEbn0 = 1:size(ebn0List, 2)
     parfor idxRun = 1:(totalSigCount / sigBatchPerLoop)
         % Tx
         inDataBits = randomBits(bitsPerOFDMSymbol, sigBatchPerLoop);
-        txModSig = modulator(inDataBits, modOrder);
+        txModSig = modulator(inDataBits, modOrder, lower(modType));
         txMapSig = scMap(txModSig, fftSize, nullIdx, pilotIdx, pilotVal);
         txIFFTSig = sqrt(fftSize) .* ifft(txMapSig, fftSize, 1);
         txOFDMSig = cpAdder(txIFFTSig, cpLen);
@@ -84,13 +66,13 @@ for idxEbn0 = 1:size(ebn0List, 2)
         % actual channel
         rxDemapSig = scDemap(rxFFTSig, fftSize, nullIdx, pilotIdx);
         rxEQSig = equalizer(rxDemapSig, channel(setdiff(1:fftSize, [pilotIdx; nullIdx]), :));
-        outDataBits = demodulator(rxEQSig, modOrder);
+        outDataBits = demodulator(rxEQSig, modOrder, lower(modType));
 
         % estimated channel
         [rxEstDemapSig, rxPilotSig] = scDemap(rxFFTSig, fftSize, nullIdx, pilotIdx);
         estChannel = channelEstimator(rxPilotSig ./ pilotVal, fftSize, nullIdx, pilotIdx);
         rxEstEQSig = equalizer(rxEstDemapSig, estChannel);
-        estOutDataBits = demodulator(rxEstEQSig, modOrder);
+        estOutDataBits = demodulator(rxEstEQSig, modOrder, lower(modType));
 
         % BER calculate
         [~, tempBER(idxRun)] = biterr(inDataBits, outDataBits);
