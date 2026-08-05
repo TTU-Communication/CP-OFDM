@@ -19,6 +19,7 @@ mu = 1;                         % Companding parameter (mu-law)
 
 %% value depends on parameter
 numData = fftSize - length(nullIdx);                  % Data subcarrier size
+dataIdx = setdiff((1:fftSize)', nullIdx);
 bitsPerModSymbol = log2(modOrder);
 bitsPerOFDMSymbol = numData * bitsPerModSymbol;
 
@@ -55,7 +56,7 @@ for idxEbn0 = 1:size(ebn0List, 2)
 
     parfor idxRun = 1:(totalSigCount / sigBatchPerLoop)
         % Tx
-        inDataBits = randomBits(bitsPerOFDMSymbol, sigBatchPerLoop);
+        inDataBits = randomBits([bitsPerOFDMSymbol sigBatchPerLoop]);
         txModSig = modulator(inDataBits, modOrder, lower(modType));
         txMapSig = scMap(txModSig, fftSize, nullIdx);
         txIFFTSig = sqrt(fftSize) .* ifft(txMapSig, fftSize, 1);

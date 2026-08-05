@@ -20,6 +20,7 @@ ebn0List = 0:1:20;              % Energy per bit to noise power spectral density
 
 %% value depends on parameter
 numData = fftSize - length(nullIdx) - length(pilotIdx);     % Data subcarrier size
+dataIdx = setdiff((1:fftSize)', [nullIdx; pilotIdx]);
 bitsPerModSymbol = log2(modOrder);
 bitsPerOFDMSymbol = numData * bitsPerModSymbol;
 pilotVal = repmat(pilotVal, [1 sigBatchPerLoop]);
@@ -45,7 +46,7 @@ for idxEbn0 = 1:size(ebn0List, 2)
 
     parfor idxRun = 1:(totalSigCount / sigBatchPerLoop)
         % Tx
-        inDataBits = randomBits(bitsPerOFDMSymbol, sigBatchPerLoop);
+        inDataBits = randomBits([bitsPerOFDMSymbol sigBatchPerLoop]);
         txModSig = modulator(inDataBits, modOrder, lower(modType));
         txMapSig = scMap(txModSig, fftSize, nullIdx, pilotIdx, pilotVal);
         txIFFTSig = sqrt(fftSize) .* ifft(txMapSig, fftSize, 1);
@@ -65,7 +66,7 @@ for idxEbn0 = 1:size(ebn0List, 2)
 
         % actual channel
         rxDemapSig = scDemap(rxFFTSig, fftSize, nullIdx, pilotIdx);
-        rxEQSig = equalizer(rxDemapSig, channel(setdiff(1:fftSize, [pilotIdx; nullIdx]), :));
+        rxEQSig = equalizer(rxDemapSig, channel(dataIdx, :));
         outDataBits = demodulator(rxEQSig, modOrder, lower(modType));
 
         % estimated channel
