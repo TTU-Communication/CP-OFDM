@@ -1,6 +1,17 @@
-function bits = randomBits(sz)
+function bits = randomBits(sz, options)
     arguments (Repeating)
         sz (1,:) double {mustBeInteger, mustBeNonnegative}
+    end
+
+    arguments
+        options.OutputLocation (1,1) string ...
+            {mustBeMember(options.OutputLocation, ...
+            ["cpu", "gpu"])} = "cpu"
+
+        options.DataType (1,1) string ...
+            {mustBeMember(options.DataType, ...
+            ["single", "double", "int8", "uint8", ...
+            "int16", "uint16", "int32", "uint32", "logical"])} = "double"
     end
 
     if isempty(sz)
@@ -21,5 +32,9 @@ function bits = randomBits(sz)
         dims = [sz{:}];
     end
 
-    bits = randi([0 1], dims);
+    if options.OutputLocation == "gpu"
+        bits = gpuArray.randi([0 1], dims, options.DataType);
+    else
+        bits = randi([0 1], dims, options.DataType);
+    end
 end
