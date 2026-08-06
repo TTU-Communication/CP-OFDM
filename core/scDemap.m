@@ -31,10 +31,10 @@ function varargout = scDemap(x, nfft, varargin)
 
     [prmStr, dataIdx] = setup(x, nfft, varargin{:});
 
-    varargout{1} = x(dataIdx, :, :);
+    varargout{1} = x(dataIdx, :, :, :);
 
     if ~isempty(prmStr.PilotIndices)
-        varargout{2} = x(prmStr.PilotIndices, :, :);
+        varargout{2} = x(prmStr.PilotIndices, :, :, :);
     else
         nargoutchk(0, 1);
     end
@@ -44,9 +44,9 @@ end
 function [prmStr, pDataIdx] = setup(x, nfft, varargin)
 
     validateattributes(x, {'numeric'}, ...
-        {'3d', 'nonempty', 'finite'}, mfilename, 'X', 1);
+        {'nonempty', 'finite'}, mfilename, 'X', 1);
 
-    [~, numSym, numRX] = size(x);
+    [~, numSymbol, numRX, numBatch] = size(x);
 
     validateattributes(nfft, {'numeric'}, ...
         {'real', 'integer', 'scalar', 'positive', 'nonempty', 'finite'}, ...
@@ -71,11 +71,12 @@ function [prmStr, pDataIdx] = setup(x, nfft, varargin)
 
     prmStr = struct(...
         "FFTLength", nfft, ...
-        "NumSymbols", numSym, ...
-        "numRXs", numRX, ...
+        "NumSymbols", numSymbol, ...
+        "NumRXs", numRX, ...
+        "NumBatch", numBatch, ...
         "NullIndices", NullIndices, ...
         "PilotIndices", PilotIndices, ...
-        "hasPilots", hasPilots);
+        "HasPilots", hasPilots);
 
     if ~isempty(prmStr.NullIndices)
         checkNulls(prmStr);

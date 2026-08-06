@@ -18,7 +18,7 @@ nRX = 1;                        % Numel of receiver antenna
 
 % Simulation parameter
 baseSigCount = 10000;           % testing signal numbers (will multiply a factor)
-sigPerLoop = 100;               % Every loop test signals
+sigBatchPerLoop = 100;               % Every loop test signals
 ebn0List = 0:1:20;              % Energy per bit to noise power spectral density ratio(dB)
 
 %% value depends on parameter
@@ -26,7 +26,7 @@ numData = fftSize - length(nullIdx) - length(pilotIdx);    % Data subcarrier siz
 dataIdx = setdiff((1:fftSize)', [nullIdx; pilotIdx]);
 bitsPerModSymbol = log2(modOrder);
 bitsPerOFDMSymbol = numData * bitsPerModSymbol;
-pilotVal = repmat(pilotVal, 1, sigPerLoop);
+pilotVal = repmat(pilotVal, [1 1 nTX sigBatchPerLoop]);
 
 sigPowerRef = (numData + length(pilotIdx)) / fftSize;
 
@@ -41,17 +41,19 @@ for idxEbn0 = 1:size(ebn0List, 2)
     % Calculate the amount of test signals based on SNR
     totalSigCount = (10 ^ floor(snr / 10)) * baseSigCount;
     % BER storage depends on EbN0
-    tempBER = zeros(1, totalSigCount / sigPerLoop);
+    tempBER = zeros(1, totalSigCount / sigBatchPerLoop);
 
     fprintf('EbN0 = %2d, max signal number = %d\n', ebn0List(idxEbn0), totalSigCount);
 
-    parfor idxRun = 1:(totalSigCount / sigPerLoop)
+    parfor idxRun = 1:(totalSigCount / sigBatchPerLoop)
         % Tx
-        inDataBits = randomBits([bitsPerOFDMSymbol sigPerLoop nTX]);
+        inDataBits = randomBits([bitsPerOFDMSymbol*1 nTX*sigBatchPerLoop]);
         txModSig = modulator(inDataBits, modOrder, lower(modType));
+        txModSig = reshape(txModSig, [numData 1 nTX sigBatchPerLoop]);
         txMapSig = scMap(txModSig, fftSize, nullIdx, pilotIdx, pilotVal);
         txIFFTSig = sqrt(fftSize) .* ifft(txMapSig, fftSize, 1);
         txOFDMSig = cpAdder(txIFFTSig, cpLen) / sqrt(nTX);
+        txOFDMSig = reshape(txOFDMSig, [fftSize+cpLen*1 nTX sigBatchPerLoop]);
 
         % Channel
         [fadedSig, channel] = rayleighChannel(txOFDMSig, channelLen, 1 / channelLen, fftSize, nRX);
@@ -62,10 +64,12 @@ for idxEbn0 = 1:size(ebn0List, 2)
         rxNoisySig = fadedSig + noise;
 
         % Rx
-        rxNoCPSig = cpRemover(rxNoisySig, cpLen);
+        rxSig = reshape(rxNoisySig, [fftSize+cpLen 1 nRX sigBatchPerLoop]);
+        rxNoCPSig = cpRemover(rxSig, cpLen);
         rxFFTSig = 1 / sqrt(fftSize) .* fft(rxNoCPSig, fftSize, 1);
         rxDemapSig = scDemap(rxFFTSig, fftSize, nullIdx, pilotIdx);
         rxEQSig = equalizer(rxDemapSig, channel(dataIdx, :, :, :) / sqrt(nTX));
+        rxEQSig = reshape(rxEQSig, [numData*1 nTX*sigBatchPerLoop]);
         outDataBits = demodulator(rxEQSig, modOrder, lower(modType));
 
         % BER calculate

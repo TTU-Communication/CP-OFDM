@@ -11,7 +11,7 @@ modType = 'QAM';                % Modulation (Avaliable with 'PSK', 'QAM')
 
 % Simulation parameter
 baseSigCount = 10000;           % testing signal numbers (will multiply a factor)
-sigPerLoop = 100;               % Every loop test signals
+sigBatchPerLoop = 100;               % Every loop test signals
 ebn0List = 0:1:20;              % Energy per bit to noise power spectral density ratio(dB)
 
 %% value depends on parameter
@@ -33,16 +33,18 @@ for idxEbn0 = 1:size(ebn0List, 2)
     % Calculate the amount of test signals based on SNR
     totalSigCount = (10 ^ floor(snr / 10)) * baseSigCount;
     % BER storage depends on EbN0
-    tempBER = zeros(1, totalSigCount / sigPerLoop);
+    tempBER = zeros(1, totalSigCount / sigBatchPerLoop);
 
     fprintf('EbN0 = %2d, max signal number = %d\n', ebn0List(idxEbn0), totalSigCount);
 
-    parfor idxRun = 1:(totalSigCount / sigPerLoop)
+    parfor idxRun = 1:(totalSigCount / sigBatchPerLoop)
         % Tx
-        inDataBits = randomBits([bitsPerOFDMSymbol sigPerLoop]);
+        inDataBits = randomBits([bitsPerOFDMSymbol*1 1*sigBatchPerLoop]);
         txModSig = modulator(inDataBits, modOrder, lower(modType));
+        txModSig = reshape(txModSig, [numData 1 1 sigBatchPerLoop]);
         txMapSig = scMap(txModSig, fftSize, nullIdx);
         txIFFTSig = sqrt(fftSize) .* ifft(txMapSig, fftSize, 1);
+        txIFFTSig = reshape(txIFFTSig, [fftSize*1 1 sigBatchPerLoop]);
 
         % Noise
         noisePower = sigPowerRef / (10 ^ (snr / 10));
@@ -50,8 +52,10 @@ for idxEbn0 = 1:size(ebn0List, 2)
         rxNoisySig = txIFFTSig + noise;
 
         % Rx
-        rxFFTSig = 1 / sqrt(fftSize) .* fft(rxNoisySig, fftSize, 1);
+        rxSig = reshape(rxNoisySig, [fftSize 1 1 sigBatchPerLoop]);
+        rxFFTSig = 1 / sqrt(fftSize) .* fft(rxSig, fftSize, 1);
         rxDemapSig = scDemap(rxFFTSig, fftSize, nullIdx);
+        rxDemapSig = reshape(rxDemapSig, [numData*1 1*sigBatchPerLoop]);
         outDataBits = demodulator(rxDemapSig, modOrder, lower(modType));
 
         % BER calculate

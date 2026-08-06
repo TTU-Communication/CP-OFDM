@@ -23,7 +23,7 @@ numData = fftSize - length(nullIdx) - length(pilotIdx);     % Data subcarrier si
 dataIdx = setdiff((1:fftSize)', [nullIdx; pilotIdx]);
 bitsPerModSymbol = log2(modOrder);
 bitsPerOFDMSymbol = numData * bitsPerModSymbol;
-pilotVal = repmat(pilotVal, [1 sigBatchPerLoop]);
+pilotVal = repmat(pilotVal, [1 1 1 sigBatchPerLoop]);
 
 sigPowerRef = (numData + length(pilotIdx)) / fftSize;
 
@@ -46,11 +46,13 @@ for idxEbn0 = 1:size(ebn0List, 2)
 
     parfor idxRun = 1:(totalSigCount / sigBatchPerLoop)
         % Tx
-        inDataBits = randomBits([bitsPerOFDMSymbol sigBatchPerLoop]);
+        inDataBits = randomBits([bitsPerOFDMSymbol*1 1*sigBatchPerLoop]);
         txModSig = modulator(inDataBits, modOrder, lower(modType));
+        txModSig = reshape(txModSig, [numData 1 1 sigBatchPerLoop]);
         txMapSig = scMap(txModSig, fftSize, nullIdx, pilotIdx, pilotVal);
         txIFFTSig = sqrt(fftSize) .* ifft(txMapSig, fftSize, 1);
         txOFDMSig = cpAdder(txIFFTSig, cpLen);
+        txOFDMSig = reshape(txOFDMSig, [fftSize+cpLen*1 1 sigBatchPerLoop]);
 
         % Channel
         [fadedSig, channel] = rayleighChannel(txOFDMSig, channelLen, 1 / channelLen, fftSize);
@@ -61,18 +63,21 @@ for idxEbn0 = 1:size(ebn0List, 2)
         rxNoisySig = fadedSig + noise;
 
         % Rx
-        rxNoCPSig = cpRemover(rxNoisySig, cpLen);
+        rxSig = reshape(rxNoisySig, [fftSize+cpLen 1 1 sigBatchPerLoop]);
+        rxNoCPSig = cpRemover(rxSig, cpLen);
         rxFFTSig = 1 / sqrt(fftSize) .* fft(rxNoCPSig, fftSize, 1);
 
         % actual channel
         rxDemapSig = scDemap(rxFFTSig, fftSize, nullIdx, pilotIdx);
-        rxEQSig = equalizer(rxDemapSig, channel(dataIdx, :));
+        rxEQSig = equalizer(rxDemapSig, channel(dataIdx, :, :, :));
+        rxEQSig = reshape(rxEQSig, [numData*1 1*sigBatchPerLoop]);
         outDataBits = demodulator(rxEQSig, modOrder, lower(modType));
 
         % estimated channel
         [rxEstDemapSig, rxPilotSig] = scDemap(rxFFTSig, fftSize, nullIdx, pilotIdx);
         estChannel = channelEstimator(rxPilotSig ./ pilotVal, fftSize, nullIdx, pilotIdx);
         rxEstEQSig = equalizer(rxEstDemapSig, estChannel);
+        rxEstEQSig = reshape(rxEstEQSig, [numData*1 1*sigBatchPerLoop]);
         estOutDataBits = demodulator(rxEstEQSig, modOrder, lower(modType));
 
         % BER calculate
