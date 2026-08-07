@@ -51,14 +51,14 @@ for idxEbn0 = 1:size(ebn0List, 2)
         % Tx
         inDataBits = randomBits([bitsPerOFDMSymbol*1 1*sigBatchPerLoop]);
         txModSig = modulator(inDataBits, modOrder, lower(modType));
-        txModSig = reshape(txModSig, [numData 1 1 sigBatchPerLoop]);
-        txMapSig = scMap(txModSig, fftSize, nullIdx, pilotIdx, pilotVal);
+        txPreMapSig = reshape(txModSig, [numData 1 1 sigBatchPerLoop]);
+        txMapSig = scMap(txPreMapSig, fftSize, nullIdx, pilotIdx, pilotVal);
         txIFFTSig = sqrt(fftSize) .* ifft(txMapSig, fftSize, 1);
         txOFDMSig = cpAdder(txIFFTSig, cpLen);
-        txOFDMSig = reshape(txOFDMSig, [fftSize+cpLen*1 1 sigBatchPerLoop]);
+        txSig = reshape(txOFDMSig, [fftSize+cpLen*1 1 sigBatchPerLoop]);
 
         % Channel
-        [fadedSig, channel] = rayleighChannel(txOFDMSig, channelLen, 1 / channelLen, fftSize);
+        [fadedSig, channel] = rayleighChannel(txSig, channelLen, 1 / channelLen, fftSize);
 
         % Noise
         noise = awgnx(size(fadedSig), noisePower, fadedSig(1));
@@ -72,15 +72,15 @@ for idxEbn0 = 1:size(ebn0List, 2)
         % actual channel
         rxDemapSig = scDemap(rxFFTSig, fftSize, nullIdx, pilotIdx);
         rxEQSig = equalizer(rxDemapSig, channel(dataIdx, :, :, :));
-        rxEQSig = reshape(rxEQSig, [numData*1 1*sigBatchPerLoop]);
-        outDataBits = demodulator(rxEQSig, modOrder, lower(modType));
+        rxPreDemodSig = reshape(rxEQSig, [numData*1 1*sigBatchPerLoop]);
+        outDataBits = demodulator(rxPreDemodSig, modOrder, lower(modType));
 
         % estimated channel
         [rxEstDemapSig, rxPilotSig] = scDemap(rxFFTSig, fftSize, nullIdx, pilotIdx);
         estChannel = channelEstimator(rxPilotSig ./ pilotVal, fftSize, nullIdx, pilotIdx);
         rxEstEQSig = equalizer(rxEstDemapSig, estChannel);
-        rxEstEQSig = reshape(rxEstEQSig, [numData*1 1*sigBatchPerLoop]);
-        estOutDataBits = demodulator(rxEstEQSig, modOrder, lower(modType));
+        rxEstPreDemodSig = reshape(rxEstEQSig, [numData*1 1*sigBatchPerLoop]);
+        estOutDataBits = demodulator(rxEstPreDemodSig, modOrder, lower(modType));
 
         % BER calculate
         [~, tempBER(idxRun)] = biterr(inDataBits, outDataBits);

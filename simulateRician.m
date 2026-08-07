@@ -53,14 +53,14 @@ for idxEbn0 = 1:size(ebn0List, 2)
         % Tx
         inDataBits = randomBits([bitsPerOFDMSymbol*1 nTX*sigBatchPerLoop]);
         txModSig = modulator(inDataBits, modOrder);
-        txModSig = reshape(txModSig, [numData 1 nTX sigBatchPerLoop]);
-        txMapSig = scMap(txModSig, fftSize, nullIdx, pilotIdx, pilotVal);
+        txPreMapSig = reshape(txModSig, [numData 1 nTX sigBatchPerLoop]);
+        txMapSig = scMap(txPreMapSig, fftSize, nullIdx, pilotIdx, pilotVal);
         txIFFTSig = sqrt(fftSize) .* ifft(txMapSig, fftSize, 1);
         txOFDMSig = cpAdder(txIFFTSig, cpLen) / sqrt(nTX);
-        txOFDMSig = reshape(txOFDMSig, [fftSize+cpLen*1 nTX sigBatchPerLoop]);
+        txSig = reshape(txOFDMSig, [fftSize+cpLen*1 nTX sigBatchPerLoop]);
 
         % Channel
-        [fadedSig, channel] = ricianChannel(txOFDMSig, channelLen, kFactor, fftSize, nRX);
+        [fadedSig, channel] = ricianChannel(txSig, channelLen, kFactor, fftSize, nRX);
 
         % Noise
         noise = awgnx(size(fadedSig), noisePower, fadedSig(1));
@@ -72,8 +72,8 @@ for idxEbn0 = 1:size(ebn0List, 2)
         rxFFTSig = 1 / sqrt(fftSize) .* fft(rxNoCPSig, fftSize, 1);
         rxDemapSig = scDemap(rxFFTSig, fftSize, nullIdx, pilotIdx);
         rxEQSig = equalizer(rxDemapSig, channel(dataIdx, :, :, :) / sqrt(nTX));
-        rxEQSig = reshape(rxEQSig, [numData*1 nTX*sigBatchPerLoop]);
-        outDataBits = demodulator(rxEQSig, modOrder);
+        rxPreDemodSig = reshape(rxEQSig, [numData*1 nTX*sigBatchPerLoop]);
+        outDataBits = demodulator(rxPreDemodSig, modOrder);
 
         % BER calculate
         [~, tempBER(idxRun)] = biterr(inDataBits(:), outDataBits(:));

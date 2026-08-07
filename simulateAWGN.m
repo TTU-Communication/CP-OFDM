@@ -44,20 +44,20 @@ for idxEbn0 = 1:size(ebn0List, 2)
         % Tx
         inDataBits = randomBits([bitsPerOFDMSymbol*1 1*sigBatchPerLoop]);
         txModSig = modulator(inDataBits, modOrder, lower(modType));
-        txModSig = reshape(txModSig, [numData 1 1 sigBatchPerLoop]);
-        txMapSig = scMap(txModSig, fftSize, nullIdx);
+        txPreMapSig = reshape(txModSig, [numData 1 1 sigBatchPerLoop]);
+        txMapSig = scMap(txPreMapSig, fftSize, nullIdx);
         txIFFTSig = sqrt(fftSize) .* ifft(txMapSig, fftSize, 1);
-        txIFFTSig = reshape(txIFFTSig, [fftSize*1 1 sigBatchPerLoop]);
+        txSig = reshape(txIFFTSig, [fftSize*1 1 sigBatchPerLoop]);
 
         % Noise
-        noise = awgnx(size(txIFFTSig), noisePower, txIFFTSig(1));
-        rxNoisySig = txIFFTSig + noise;
+        noise = awgnx(size(txSig), noisePower, txSig(1));
+        rxNoisySig = txSig + noise;
 
         % Rx
         rxSig = reshape(rxNoisySig, [fftSize 1 1 sigBatchPerLoop]);
         rxFFTSig = 1 / sqrt(fftSize) .* fft(rxSig, fftSize, 1);
         rxDemapSig = scDemap(rxFFTSig, fftSize, nullIdx);
-        rxDemapSig = reshape(rxDemapSig, [numData*1 1*sigBatchPerLoop]);
+        rxPreDemodSig = reshape(rxDemapSig, [numData*1 1*sigBatchPerLoop]);
         outDataBits = demodulator(rxDemapSig, modOrder, lower(modType));
 
         % BER calculate
