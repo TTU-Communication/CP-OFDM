@@ -13,7 +13,7 @@ modType = 'QAM';                % Modulation (Avaliable with 'PSK', 'QAM')
 
 % Simulation parameter
 baseSigCount = 10000;           % testing signal numbers (will multiply a factor)
-sigPerLoop = 10000;             % Every loop test signals
+sigBatchPerLoop = 10000;        % Every loop test signals
 ebn0List = 10:1:30;             % Energy per bit to noise power spectral density ratio(dB)
 
 % Impulsive Noise parameter
@@ -31,28 +31,16 @@ numData = fftSize - length(nullIdx) - length(pilotIdx);    % Data subcarrier siz
 dataIdx = setdiff((1:fftSize)', [nullIdx; pilotIdx]);
 bitsPerModSymbol = log2(modOrder);
 bitsPerOFDMSymbol = numData * bitsPerModSymbol;
-pilotVal = repmat(pilotVal, 1, sigPerLoop);
+pilotVal = gpuArray(repmat(pilotVal, [1 1 1 sigBatchPerLoop]));
+
+sigPowerRef = (numData + length(pilotIdx)) / fftSize;
 
 % PGIR transform domain mask
 transMask = gpuArray.zeros(fftSize, 1);
 transMask([nullIdx; pilotIdx]) = 1;
-
-%% package 
-randomBits = @(sigSize) gpuArray.randi([0 1], sigSize);
-calcPower = @(sig) sum(sum(abs(sig) .^ 2) / size(sig, 1), 3);
-switch (lower(modType))
-    case 'psk'
-        modulator = @(input, M) pskmod(input, M, InputType="bit");
-        demodulator = @(input, M) pskdemod(input, M, OutputType="bit");
-    case 'qam'
-        modulator = @(input, M) qammod(input, M, InputType="bit", ...
-            UnitAveragePower=true);
-        demodulator = @(input, M) qamdemod(input, M, OutputType="bit", ...
-            UnitAveragePower=true);
-    otherwise
-        error('OFDMMain:invalidModulation', ...
-            'The modulation mode must be one of PSK or QAM.');
-end
+refSigFD = gpuArray.zeros(fftSize, 1, 1, sigBatchPerLoop);
+refSigFD(pilotIdx, :, :, :) = pilotVal;
+refSig = sqrt(fftSize) * ifft(refSigFD, fftSize, 1);
 
 %% data storage
 ber = zeros(1, length(ebn0List));
@@ -66,47 +54,56 @@ for idxEbn0 = 1:size(ebn0List, 2)
         + 10 * log10(numData / fftSize);
     % Calculate the amount of test signals based on SNR
     totalSigCount = (10 ^ floor(snr / 10)) * baseSigCount;
-    % BER storage depends on EbN0
-    tempBER = gpuArray.zeros(1, totalSigCount / sigPerLoop);
-    tempBERIN = gpuArray.zeros(1, totalSigCount / sigPerLoop);
-    tempBERPGIR = gpuArray.zeros(1, totalSigCount / sigPerLoop);
-
     fprintf('EbN0 = %2d, max signal number = %d\n', ebn0List(idxEbn0), totalSigCount);
+    fprintf('Start at %s\n', getTimeStr);
 
-    for idxRun = 1:(totalSigCount / sigPerLoop)
+    % Calculate noise power & impulsive noise power
+    noisePower = sigPowerRef / (10 ^ (snr / 10));
+    INPower = sigPowerRef / (10 ^ (INsnr / 10));
+    % BER storage depends on EbN0
+    tempBER = gpuArray.zeros(1, totalSigCount / sigBatchPerLoop);
+    tempBERIN = gpuArray.zeros(1, totalSigCount / sigBatchPerLoop);
+    tempBERPGIR = gpuArray.zeros(1, totalSigCount / sigBatchPerLoop);
+
+    for idxRun = 1:(totalSigCount / sigBatchPerLoop)
         % Tx
-        inDataBits = randomBits([bitsPerOFDMSymbol sigPerLoop nTX]);
-        txModSig = modulator(inDataBits, modOrder);
-        txMapSig = scMap(txModSig, fftSize, nullIdx, pilotIdx, pilotVal);
+        inDataBits = randomBits([bitsPerOFDMSymbol*1 1*sigBatchPerLoop], OutputLocation='gpu');
+        txModSig = modulator(inDataBits, modOrder, lower(modType));
+        txPreMapSig = reshape(txModSig, [numData 1 1 sigBatchPerLoop]);
+        txMapSig = scMap(txPreMapSig, fftSize, nullIdx, pilotIdx, pilotVal);
         txIFFTSig = sqrt(fftSize) .* ifft(txMapSig, fftSize, 1);
-
-        sigPower = calcPower(txIFFTSig);
+        txSig = reshape(txIFFTSig, [fftSize*1 1 sigBatchPerLoop]);
 
         % Noise
-        [noise, noisePower] = awgnx(size(txIFFTSig), snr, sigPower, txIFFTSig(1));
-        rxNoisySig = txIFFTSig + noise;
+        noise = awgnx(size(txSig), noisePower, txSig(1));
+        rxNoisySig = txSig + noise;
 
         % Impulsive Noise
-        [impulsiveNoise, ~, happenIdx] = IN(size(rxNoisySig), INsnr, INprob, sigPower, rxNoisySig(1));
+        [impulsiveNoise, happenIdx] = IN(size(rxNoisySig), INPower, INprob, rxNoisySig(1));
         rxINNoisySig = rxNoisySig + impulsiveNoise;
 
         % Rx
         % Orig
-        rxFFTSig = 1 / sqrt(fftSize) .* fft(rxNoisySig, fftSize, 1);
+        rxSig = reshape(rxNoisySig, [fftSize 1 1 sigBatchPerLoop]);
+        rxFFTSig = 1 / sqrt(fftSize) .* fft(rxSig, fftSize, 1);
         rxDemapSig = scDemap(rxFFTSig, fftSize, nullIdx, pilotIdx);
-        outDataBits = demodulator(rxDemapSig, modOrder);
+        rxPreDemodSig = reshape(rxDemapSig, [numData*1 1*sigBatchPerLoop]);
+        outDataBits = demodulator(rxPreDemodSig, modOrder, lower(modType));
 
         % Orig + IN
-        rxINFFTSig = 1 / sqrt(fftSize) .* fft(rxINNoisySig, fftSize, 1);
+        rxINSig = reshape(rxINNoisySig, [fftSize 1 1 sigBatchPerLoop]);
+        rxINFFTSig = 1 / sqrt(fftSize) .* fft(rxINSig, fftSize, 1);
         rxINDemapSig = scDemap(rxINFFTSig, fftSize, nullIdx, pilotIdx);
-        outINDataBits = demodulator(rxINDemapSig, modOrder);
+        rxINPreDemodSig = reshape(rxINDemapSig, [numData*1 1*sigBatchPerLoop]);
+        outINDataBits = demodulator(rxINPreDemodSig, modOrder, lower(modType));
 
         % Orig + IN with PGIR
-        dataMask = gpuArray(~happenIdx);
-        rxPGIRSig = PGIR(rxINNoisySig, txIFFTSig, dataMask, transMask, iterCount);
+        dataMask = gpuArray(~reshape(happenIdx, [fftSize 1 1 sigBatchPerLoop]));
+        rxPGIRSig = PGIR(rxINSig, refSig, dataMask, transMask, iterCount);
         rxPGIRFDSig = 1 / sqrt(fftSize) .* fft(rxPGIRSig, fftSize, 1);
         rxPGIRDemapSig = scDemap(rxPGIRFDSig, fftSize, nullIdx, pilotIdx);
-        outINPGIRDataBits = demodulator(rxPGIRDemapSig, modOrder);
+        rxPGIRPreDemodSig = reshape(rxPGIRDemapSig, [numData*1 1*sigBatchPerLoop]);
+        outINPGIRDataBits = demodulator(rxPGIRPreDemodSig, modOrder, lower(modType));
 
         % BER calculate
         [~, tempBER(idxRun)] = biterr(inDataBits(:), outDataBits(:));
@@ -135,16 +132,13 @@ grid on;
 
 %% plot figure
 idx = 4;
-cpuRxNoisySig = gather(rxNoisySig(:, idx));
-cpuRxINNoisySig = gather(rxINNoisySig(:, idx));
-cpuRxPGIRTDSig = gather(rxPGIRSig(:, idx));
+cpuRxNoisySig = gather(rxSig(:, 1, 1, idx));
+cpuRxINNoisySig = gather(rxINSig(:, 1, 1, idx));
+cpuRxPGIRTDSig = gather(rxPGIRSig(:, 1, 1, idx));
 
-cpuRxFFTSig = gather(rxFFTSig(:, idx));
-cpuRxINFFTSig = gather(rxINFFTSig(:, idx));
-cpuRxPGIRFDSig = gather(rxPGIRFDSig(:, idx));
-
-cpuRxEQTDSig = sqrt(fftSize) .* ifft(cpuRxDemapSig);
-cpuRxINEQTDSig = sqrt(fftSize) .* ifft(cpuRxINDemapSig);
+cpuRxFFTSig = gather(rxFFTSig(:, 1, 1, idx));
+cpuRxINFFTSig = gather(rxINFFTSig(:, 1, 1, idx));
+cpuRxPGIRFDSig = gather(rxPGIRFDSig(:, 1, 1, idx));
 
 figure
 hold on;

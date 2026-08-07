@@ -11,7 +11,7 @@ modType = 'QAM';                % Modulation (Avaliable with 'PSK', 'QAM')
 
 % Simulation parameter
 baseSigCount = 100000;           % testing signal numbers (will multiply a factor)
-sigPerLoop = 25000;             % Every loop test signals
+sigBatchPerLoop = 25000;        % Every loop test signals
 ebn0List = 10:1:20;             % Energy per bit to noise power spectral density ratio(dB)
 
 % Impulsive Noise parameter
@@ -36,26 +36,12 @@ dataIdx = setdiff((1:fftSize)', nullIdx);
 bitsPerModSymbol = log2(modOrder);
 bitsPerOFDMSymbol = numData * bitsPerModSymbol;
 
+sigPowerRef = numData * OSFactor / fftSize;
+
 % PGIR transform domain mask
 transMask = zeros(fftSize, 1);
 transMask(nullIdx) = 1;
-
-%% package
-randomBits = @(sigSize) randi([0 1], sigSize);
-calcPower = @(sig) sum(sum(abs(sig) .^ 2) / size(sig, 1), 3);
-switch (lower(modType))
-    case 'psk'
-        modulator = @(input, M) pskmod(input, M, InputType="bit");
-        demodulator = @(input, M) pskdemod(input, M, OutputType="bit");
-    case 'qam'
-        modulator = @(input, M) qammod(input, M, InputType="bit", ...
-            UnitAveragePower=true);
-        demodulator = @(input, M) qamdemod(input, M, OutputType="bit", ...
-            UnitAveragePower=true);
-    otherwise
-        error('OFDMMain:invalidModulation', ...
-            'The modulation mode must be one of PSK or QAM.');
-end
+refSig = zeros(fftSize, 1);
 
 %% data storage
 berPGIR = zeros(1, length(ebn0List));
@@ -69,7 +55,7 @@ berReplaceClipBlank = zeros(1, length(ebn0List));
 %% CP-OFDM
 % for idxINprob = 1:length(INprobList)
 %     INprob = INprobList(idxINprob);
-fprintf('Start process %f probability at %s\n', INprob, datetime('now', TimeZone='local', Format='MM-dd HH:mm:ss'));
+fprintf('Start process %f probability at %s\n', INprob, getTimeStr);
 
 for idxEbn0 = 1:size(ebn0List, 2)
     % SNR calculation
@@ -77,78 +63,83 @@ for idxEbn0 = 1:size(ebn0List, 2)
         + 10 * log10(numData / fftSize);
     % Calculate the amount of test signals based on SNR
     totalSigCount = (10 ^ floor(snr / 10)) * baseSigCount;
-    % BER storage depends on EbN0
-    tempBERPGIR = zeros(1, totalSigCount / sigPerLoop);
-    tempBERBlank = zeros(1, totalSigCount / sigPerLoop);
-    tempBERClip = zeros(1, totalSigCount / sigPerLoop);
-    tempBERClipBlank = zeros(1, totalSigCount / sigPerLoop);
-    % tempBERDeepClip = zeros(1, totalSigCount / sigPerLoop);
-    % tempBERReplace = zeros(1, totalSigCount / sigPerLoop);
-    % tempBERReplaceClipBlank = zeros(1, totalSigCount / sigPerLoop);
-
-    sigP = numData / fftSize * OSFactor;
-    noiseP = sigP / 10 ^ (snr / 10);
-    INP = sigP / 10 ^ (INsnr / 10);
-
-    optThresPGIR = getOptThresPGIR(sigP, noiseP, INP, INprob, ...
-            fftSize, nullIdx, 'nIter', iterCount, 'M', 3000, 'OSFactor', OSFactor);
-    optThresBlank = getOptThresBlanking(sigP, noiseP, INP, INprob);
-    optThresClip = getOptThresClipping(sigP, noiseP, INP, INprob);
-    optThresClipBlank = getOptThresClipBlanking(sigP, noiseP, INP, INprob);
-
     fprintf('EbN0 = %2d, max signal number = %d\n', ebn0List(idxEbn0), totalSigCount);
+    fprintf('Start at %s\n', getTimeStr);
 
-    parfor idxRun = 1:(totalSigCount / sigPerLoop)
+    % Calculate noise power & impulsive noise power
+    noisePower = sigPowerRef / (10 ^ (snr / 10));
+    INPower = sigPowerRef / (10 ^ (INsnr / 10));
+    % BER storage depends on EbN0
+    tempBERPGIR = zeros(1, totalSigCount / sigBatchPerLoop);
+    tempBERBlank = zeros(1, totalSigCount / sigBatchPerLoop);
+    tempBERClip = zeros(1, totalSigCount / sigBatchPerLoop);
+    tempBERClipBlank = zeros(1, totalSigCount / sigBatchPerLoop);
+    % tempBERDeepClip = zeros(1, totalSigCount / sigBatchPerLoop);
+    % tempBERReplace = zeros(1, totalSigCount / sigBatchPerLoop);
+    % tempBERReplaceClipBlank = zeros(1, totalSigCount / sigBatchPerLoop);
+
+    optThresPGIR = getOptThresPGIR(sigPowerRef, noisePower, INPower, INprob, ...
+            fftSize, nullIdx, 'nIter', iterCount, 'M', 3000, 'OSFactor', OSFactor);
+    optThresBlank = getOptThresBlanking(sigPowerRef, noisePower, INPower, INprob);
+    optThresClip = getOptThresClipping(sigPowerRef, noisePower, INPower, INprob);
+    optThresClipBlank = getOptThresClipBlanking(sigPowerRef, noisePower, INPower, INprob);
+
+    parfor idxRun = 1:(totalSigCount / sigBatchPerLoop)
         % Tx
-        inDataBits = randomBits([bitsPerOFDMSymbol sigPerLoop]);
-        txModSig = modulator(inDataBits, modOrder);
-        txMapSig = scMap(txModSig, fftSize, nullIdx);
+        inDataBits = randomBits([bitsPerOFDMSymbol*1 1*sigBatchPerLoop]);
+        txModSig = modulator(inDataBits, modOrder, lower(modType));
+        txPreMapSig = reshape(txModSig, [numData 1 1 sigBatchPerLoop]);
+        txMapSig = scMap(txPreMapSig, fftSize, nullIdx);
         txIFFTSig = sqrt(OSFactor) .* sqrt(fftSize) .* ifft(txMapSig, fftSize, 1);
-
-        sigPower = calcPower(txIFFTSig);
-        % sigP = mean(sigPower);
+        txSig = reshape(txIFFTSig, [fftSize*1 1 sigBatchPerLoop]);
 
         % Noise
-        [noise, noisePower] = awgnx(size(txIFFTSig), snr, sigPower, txIFFTSig(1));
-        rxNoisySig = txIFFTSig + noise;
+        noise = awgnx(size(txSig), noisePower, txSig(1));
+        rxNoisySig = txSig + noise;
 
         % Impulsive Noise
-        [impulsiveNoise, INPower, happenIdx] = IN(size(rxNoisySig), INsnr, INprob, sigPower, rxNoisySig(1));
+        [impulsiveNoise, happenIdx] = IN(size(rxNoisySig), INPower, INprob, rxNoisySig(1));
         rxINNoisySig = rxNoisySig + impulsiveNoise;
 
+        rxINSig = reshape(rxINNoisySig, [fftSize 1 1 sigBatchPerLoop]);
+
         ampThreshold = optThresPGIR;
-        dataMask = abs(rxINNoisySig) < ampThreshold;
-        rxPGIRSig = PGIR(rxINNoisySig, txIFFTSig, dataMask, transMask, iterCount);
+        dataMask = abs(rxINSig) < ampThreshold;
+        rxPGIRSig = PGIR(rxINSig, refSig, dataMask, transMask, iterCount);
         rxPGIRFDSig = 1 / (sqrt(fftSize) .* sqrt(OSFactor)) .* fft(rxPGIRSig, fftSize, 1);
         rxDemapPGIRSig = scDemap(rxPGIRFDSig, fftSize, nullIdx);
-        outPGIRDataBits = demodulator(rxDemapPGIRSig, modOrder);
+        rxPreDemodPGIRSig = reshape(rxDemapPGIRSig, [numData*1 1*sigBatchPerLoop]);
+        outPGIRDataBits = demodulator(rxPreDemodPGIRSig, modOrder, lower(modType));
 
         % ampThreshold = optTList(2);
         ampThreshold = optThresBlank;
-        rxBlankSig = rxINNoisySig;
+        rxBlankSig = rxINSig;
         idxBlank = abs(rxBlankSig) > ampThreshold;
         rxBlankSig(idxBlank) = 0;
         rxBlankFDSig = 1 / (sqrt(fftSize) .* sqrt(OSFactor)) .* fft(rxBlankSig, fftSize, 1);
         rxDemapBlankSig = scDemap(rxBlankFDSig, fftSize, nullIdx);
-        outBlankDataBits = demodulator(rxDemapBlankSig, modOrder);
+        rxPreDemodBlankSig = reshape(rxDemapBlankSig, [numData*1 1*sigBatchPerLoop]);
+        outBlankDataBits = demodulator(rxPreDemodBlankSig, modOrder, lower(modType));
 
         ampThreshold = optThresClip;
-        rxClipSig = rxINNoisySig;
+        rxClipSig = rxINSig;
         idxClip = abs(rxClipSig) > ampThreshold;
         rxClipSig(idxClip) = ampThreshold .* exp(1j .* angle(rxClipSig(idxClip)));
         rxClipFDSig = 1 / (sqrt(fftSize) .* sqrt(OSFactor)) .* fft(rxClipSig, fftSize, 1);
         rxDemapClipSig = scDemap(rxClipFDSig, fftSize, nullIdx);
-        outClipDataBits = demodulator(rxDemapClipSig, modOrder);
+        rxPreDemodClipSig = reshape(rxDemapClipSig, [numData*1 1*sigBatchPerLoop]);
+        outClipDataBits = demodulator(rxPreDemodClipSig, modOrder, lower(modType));
 
         ampThreshold = optThresClipBlank;
-        rxClipBlankSig = rxINNoisySig;
+        rxClipBlankSig = rxINSig;
         idxClip = abs(rxClipBlankSig) > ampThreshold;
         idxBlank = abs(rxClipBlankSig) > tClipBlank(ampThreshold);
         rxClipBlankSig(idxClip) = ampThreshold .* exp(1j .* angle(rxClipBlankSig(idxClip)));
         rxClipBlankSig(idxBlank) = 0;
         rxClipBlankFDSig = 1 / (sqrt(fftSize) .* sqrt(OSFactor)) .* fft(rxClipBlankSig, fftSize, 1);
         rxDemapClipBlankSig = scDemap(rxClipBlankFDSig, fftSize, nullIdx);
-        outClipBlankDataBits = demodulator(rxDemapClipBlankSig, modOrder);
+        rxPreDemodClipBlankSig = reshape(rxDemapClipBlankSig, [numData*1 1*sigBatchPerLoop]);
+        outClipBlankDataBits = demodulator(rxPreDemodClipBlankSig, modOrder, lower(modType));
 
         % ampThreshold = optTList(5);
         % rxDeepClipSig = rxINNoisySig;
@@ -199,6 +190,10 @@ for idxEbn0 = 1:size(ebn0List, 2)
     % berReplaceClipBlank(idxEbn0) = mean(tempBERReplaceClipBlank);
 
 end
+
+fprintf('\n');
+fprintf('%s\n', repmat('-', 1, 50));
+fprintf('All process has done at %s\n', getTimeStr);
 
 %% plot figure
 figure

@@ -12,7 +12,7 @@ modType = 'QAM';                % Modulation (Avaliable with 'PSK', 'QAM')
 
 % Simulation parameter
 baseSigCount = 10000;           % testing signal numbers (will multiply a factor)
-sigPerLoop = 10000;             % Every loop test signals
+sigBatchPerLoop = 10000;        % Every loop test signals
 snr = 25;                       % Noise-to-Signal ratio
 
 % Impulsive Noise parameter
@@ -39,121 +39,89 @@ dataIdx = setdiff((1:fftSize)', nullIdx);
 bitsPerModSymbol = log2(modOrder);
 bitsPerOFDMSymbol = numData * bitsPerModSymbol;
 
+sigPowerRef = numData / fftSize;
+
 % PGIR transform domain mask
 transMask = gpuArray.zeros(fftSize, 1);
 transMask(nullIdx) = 1;
-
-%% package 
-randomBits = @(sigSize) gpuArray.randi([0 1], sigSize);
-calcPower = @(sig) sum(sum(abs(sig) .^ 2) / size(sig, 1), 3);
-switch (lower(modType))
-    case 'psk'
-        modulator = @(input, M) pskmod(input, M, InputType="bit");
-        demodulator = @(input, M) pskdemod(input, M, OutputType="bit");
-    case 'qam'
-        modulator = @(input, M) qammod(input, M, InputType="bit", ...
-            UnitAveragePower=true);
-        demodulator = @(input, M) qamdemod(input, M, OutputType="bit", ...
-            UnitAveragePower=true);
-    otherwise
-        error('OFDMMain:invalidModulation', ...
-            'The modulation mode must be one of PSK or QAM.');
-end
+refSig = gpuArray.zeros(fftSize, 1);
 
 %% data storage
 pgirSNREff = zeros(1, length(ampThresholdList));
 blankSNREff = zeros(1, length(ampThresholdList));
 clipSNREff = zeros(1, length(ampThresholdList));
-clipblankSNREff = zeros(1, length(ampThresholdList));
-deepclipSNREff = zeros(1, length(ampThresholdList));
+clipBlankSNREff = zeros(1, length(ampThresholdList));
+deepClipSNREff = zeros(1, length(ampThresholdList));
 replaceSNREff = zeros(1, length(ampThresholdList));
-replaceclipblankSNREff = zeros(1, length(ampThresholdList));
+replaceClipBlankSNREff = zeros(1, length(ampThresholdList));
 
 %% CP-OFDM
-% Tx
-inDataBits = randomBits([bitsPerOFDMSymbol sigPerLoop]);
-txModSig = modulator(inDataBits, modOrder);
-txMapSig = scMap(txModSig, fftSize, nullIdx);
-txIFFTSig = sqrt(fftSize) .* ifft(txMapSig, fftSize, 1);
+% Calculate noise power & impulsive noise power
+noisePower = sigPowerRef / (10 ^ (snr / 10));
+INPower = sigPowerRef / (10 ^ (INsnr / 10));
 
-% Channel
-sigPower = calcPower(txIFFTSig);
-sigP = mean(sigPower);
+% Tx
+inDataBits = randomBits([bitsPerOFDMSymbol*1 1*sigBatchPerLoop], OutputLocation='gpu');
+txModSig = modulator(inDataBits, modOrder, lower(modType));
+txPreMapSig = reshape(txModSig, [numData 1 1 sigBatchPerLoop]);
+txMapSig = scMap(txPreMapSig, fftSize, nullIdx);
+txIFFTSig = sqrt(fftSize) .* ifft(txMapSig, fftSize, 1);
+txSig = reshape(txIFFTSig, [fftSize*1 1 sigBatchPerLoop]);
 
 % Noise
-[noise, noisePower] = awgnx(size(txIFFTSig), snr, sigPower, txIFFTSig(1));
-rxNoisySig = txIFFTSig + noise;
+noise = awgnx(size(txSig), noisePower, txSig(1));
+rxNoisySig = txSig + noise;
 
 % Impulsive Noise
-[impulsiveNoise, ~, happenIdx] = IN(size(rxNoisySig), INsnr, INprob, sigPower, rxNoisySig(1));
+[impulsiveNoise, happenIdx] = IN(size(rxNoisySig), INPower, INprob, rxNoisySig(1));
 rxINNoisySig = rxNoisySig + impulsiveNoise;
 
 % Rx
+rxINSig = reshape(rxINNoisySig, [fftSize 1 1 sigBatchPerLoop]);
 for idxAmpThreshold = 1:length(ampThresholdList)
     ampThreshold = ampThresholdList(idxAmpThreshold);
 
-    dataMask = abs(rxINNoisySig) < ampThreshold;
-    rxPGIRSig = PGIR(rxINNoisySig, txIFFTSig, dataMask, transMask, iterCount);
-    pgirK_0 = mean(rxPGIRSig .* conj(txIFFTSig), 1) ./ calcPower(txIFFTSig);
-    pgirTempSNREff = sum(calcPower(pgirK_0 .* txIFFTSig)) ./ sum(calcPower(rxPGIRSig - pgirK_0 .* txIFFTSig));
+    dataMask = abs(rxINSig) < ampThreshold;
+    rxPGIRSig = PGIR(rxINSig, refSig, dataMask, transMask, iterCount);
+    pgirSNREff(idxAmpThreshold) = gather(calcOutputSNR(rxPGIRSig, txIFFTSig));
 
-    pgirSNREff(idxAmpThreshold) = gather(mean(pgirTempSNREff));
-
-    rxBlankSig = rxINNoisySig;
+    rxBlankSig = rxINSig;
     idxBlank = abs(rxBlankSig) > ampThreshold;
     rxBlankSig(idxBlank) = 0;
-    blankK_0 = mean(rxBlankSig .* conj(txIFFTSig), 1) ./ calcPower(txIFFTSig);
-    blankTempSNREff = sum(calcPower(blankK_0 .* txIFFTSig)) ./ sum(calcPower(rxBlankSig - blankK_0 .* txIFFTSig));
+    blankSNREff(idxAmpThreshold) = gather(calcOutputSNR(rxBlankSig, txIFFTSig));
 
-    blankSNREff(idxAmpThreshold) = gather(mean(blankTempSNREff));
-
-    rxClipSig = rxINNoisySig;
+    rxClipSig = rxINSig;
     idxClip = abs(rxClipSig) > ampThreshold;
     rxClipSig(idxClip) = ampThreshold .* exp(1j .* angle(rxClipSig(idxClip)));
-    clipK_0 = mean(rxClipSig .* conj(txIFFTSig), 1) ./ calcPower(txIFFTSig);
-    clipTempSNREff = sum(calcPower(clipK_0 .* txIFFTSig)) ./ sum(calcPower(rxClipSig - clipK_0 .* txIFFTSig));
+    clipSNREff(idxAmpThreshold) = gather(calcOutputSNR(rxClipSig, txIFFTSig));
 
-    clipSNREff(idxAmpThreshold) = gather(mean(clipTempSNREff));
-
-    rxClipBlankSig = rxINNoisySig;
+    rxClipBlankSig = rxINSig;
     idxClip = abs(rxClipBlankSig) > ampThreshold;
     idxBlank = abs(rxClipBlankSig) > tClipBlank(ampThreshold);
     rxClipBlankSig(idxClip) = ampThreshold .* exp(1j .* angle(rxClipBlankSig(idxClip)));
     rxClipBlankSig(idxBlank) = 0;
-    clipblankK_0 = mean(rxClipBlankSig .* conj(txIFFTSig), 1) ./ calcPower(txIFFTSig);
-    clipblankTempSNREff = sum(calcPower(clipblankK_0 .* txIFFTSig)) ./ sum(calcPower(rxClipBlankSig - clipblankK_0 .* txIFFTSig));
+    clipBlankSNREff(idxAmpThreshold) = gather(calcOutputSNR(rxClipBlankSig, txIFFTSig));
 
-    clipblankSNREff(idxAmpThreshold) = gather(mean(clipblankTempSNREff));
-
-    rxDeepClipSig = rxINNoisySig;
+    rxDeepClipSig = rxINSig;
     idxDeepClip = abs(rxDeepClipSig) > ampThreshold;
     idxBlank = abs(rxDeepClipSig) > ((1 + deepMu) / deepMu * ampThreshold);
     rxDeepClipSig(idxDeepClip) = (ampThreshold - deepMu .* (abs(rxDeepClipSig(idxDeepClip)) - ampThreshold)) .* exp(1j .* angle(rxDeepClipSig(idxDeepClip)));
     rxDeepClipSig(idxBlank) = 0;
-    deepclipK_0 = mean(rxDeepClipSig .* conj(txIFFTSig), 1) ./ calcPower(txIFFTSig);
-    deepclipTempSNREff = sum(calcPower(deepclipK_0 .* txIFFTSig)) ./ sum(calcPower(rxDeepClipSig - deepclipK_0 .* txIFFTSig));
+    deepClipSNREff(idxAmpThreshold) = gather(calcOutputSNR(rxDeepClipSig, txIFFTSig));
 
-    deepclipSNREff(idxAmpThreshold) = gather(mean(deepclipTempSNREff));
-
-    rxReplaceSig = rxINNoisySig;
+    rxReplaceSig = rxINSig;
     idxReplace = abs(rxReplaceSig) > ampThreshold;
-    rxReplaceSig(idxReplace) = (sqrt(pi .* sigP ./ 4)) .* exp(1j .* angle(rxReplaceSig(idxReplace)));
-    replaceK_0 = mean(rxReplaceSig .* conj(txIFFTSig), 1) ./ calcPower(txIFFTSig);
-    replaceTempSNREff = sum(calcPower(replaceK_0 .* txIFFTSig)) ./ sum(calcPower(rxReplaceSig - replaceK_0 .* txIFFTSig));
+    rxReplaceSig(idxReplace) = (sqrt(pi .* sigPowerRef ./ 4)) .* exp(1j .* angle(rxReplaceSig(idxReplace)));
+    replaceSNREff(idxAmpThreshold) = gather(calcOutputSNR(rxReplaceSig, txIFFTSig));
 
-    replaceSNREff(idxAmpThreshold) = gather(mean(replaceTempSNREff));
-
-    rxReplaceclipblankSig = rxINNoisySig;
-    idxClip = abs(rxReplaceclipblankSig) > ampThreshold;
-    idxReplace = abs(rxReplaceclipblankSig) > tReplaceClip(ampThreshold);
-    idxBlank = abs(rxReplaceclipblankSig) > tReplaceBlank(ampThreshold);
-    rxReplaceclipblankSig(idxClip) = ampThreshold .* exp(1j .* angle(rxReplaceclipblankSig(idxClip)));
-    rxReplaceclipblankSig(idxReplace) = (sqrt(pi .* sigP ./ 4)) .* exp(1j .* angle(rxReplaceclipblankSig(idxReplace)));
-    rxReplaceclipblankSig(idxBlank) = 0;
-    replaceclipblankK_0 = mean(rxReplaceclipblankSig .* conj(txIFFTSig), 1) ./ calcPower(txIFFTSig);
-    replaceclipblankTempSNREff = sum(calcPower(replaceclipblankK_0 .* txIFFTSig)) ./ sum(calcPower(rxReplaceclipblankSig - replaceclipblankK_0 .* txIFFTSig));
-
-    replaceclipblankSNREff(idxAmpThreshold) = gather(mean(replaceclipblankTempSNREff));
+    rxReplaceClipBlankSig = rxINSig;
+    idxClip = abs(rxReplaceClipBlankSig) > ampThreshold;
+    idxReplace = abs(rxReplaceClipBlankSig) > tReplaceClip(ampThreshold);
+    idxBlank = abs(rxReplaceClipBlankSig) > tReplaceBlank(ampThreshold);
+    rxReplaceClipBlankSig(idxClip) = ampThreshold .* exp(1j .* angle(rxReplaceClipBlankSig(idxClip)));
+    rxReplaceClipBlankSig(idxReplace) = (sqrt(pi .* sigPowerRef ./ 4)) .* exp(1j .* angle(rxReplaceClipBlankSig(idxReplace)));
+    rxReplaceClipBlankSig(idxBlank) = 0;
+    replaceClipBlankSNREff(idxAmpThreshold) = gather(calcOutputSNR(rxReplaceClipBlankSig, txIFFTSig));
 
 end
 
@@ -166,13 +134,22 @@ hold on;
 plot(ampThresholdList, 10 * log10(pgirSNREff), '-', Color=c(idx, :), DisplayName='PGIR');
 plot(ampThresholdList, 10 * log10(blankSNREff), '--', Color=c(idx, :), DisplayName='Blanking');
 plot(ampThresholdList, 10 * log10(clipSNREff), '-.', Color=c(idx, :), DisplayName='Clipping');
-plot(ampThresholdList, 10 * log10(clipblankSNREff), '-', Marker='o', Color=c(idx, :), DisplayName='Clipping + Blanking');
-plot(ampThresholdList, 10 * log10(deepclipSNREff), '-', Marker='+', Color=c(idx, :), DisplayName='Deep Clipping');
+plot(ampThresholdList, 10 * log10(clipBlankSNREff), '-', Marker='o', Color=c(idx, :), DisplayName='Clipping + Blanking');
+plot(ampThresholdList, 10 * log10(deepClipSNREff), '-', Marker='+', Color=c(idx, :), DisplayName='Deep Clipping');
 plot(ampThresholdList, 10 * log10(replaceSNREff), '-', Marker='x', Color=c(idx, :), DisplayName='Replacement');
-plot(ampThresholdList, 10 * log10(replaceclipblankSNREff), '-', Marker='*', Color=c(idx, :), DisplayName='Clipping + Replacement + Blanking');
+plot(ampThresholdList, 10 * log10(replaceClipBlankSNREff), '-', Marker='*', Color=c(idx, :), DisplayName='Clipping + Replacement + Blanking');
 hold off;
 legend;
 xlabel('Unknown Data Thershold (T)');
 ylabel('Output SNR (\gamma), dB');
 title(sprintf('p = %f', INprob));
 grid on;
+
+%%
+function [outSNR] = calcOutputSNR(inSig, refSig)
+    K_0 = sum(inSig .* conj(refSig), "all") / sum(abs(refSig) .^ 2, "all");
+    sigPower = abs(K_0) ^ 2 * sum(abs(refSig) .^ 2, "all");
+    errPower = sum(abs(inSig - K_0 .* refSig) .^ 2, "all");
+
+    outSNR = sigPower / errPower;
+end

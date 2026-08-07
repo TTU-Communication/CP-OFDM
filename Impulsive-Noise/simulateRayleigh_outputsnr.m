@@ -21,7 +21,7 @@ nRX = 1;                        % Numel of receiver antenna
 
 % Simulation parameter
 baseSigCount = 10000;           % testing signal numbers (will multiply a factor)
-sigPerLoop = 10000;             % Every loop test signals
+sigBatchPerLoop = 10000;        % Every loop test signals
 snr = 25;                       % Noise-to-Signal ratio
 
 % Impulsive Noise parameter
@@ -47,31 +47,16 @@ numData = fftSize - length(nullIdx) - length(pilotIdx);    % Data subcarrier siz
 dataIdx = setdiff((1:fftSize)', [nullIdx; pilotIdx]);
 bitsPerModSymbol = log2(modOrder);
 bitsPerOFDMSymbol = numData * bitsPerModSymbol;
-pilotVal = repmat(pilotVal, 1, sigPerLoop);
+pilotVal = repmat(pilotVal, [1 1 nTX sigBatchPerLoop]);
+
+sigPowerRef = (numData + length(pilotIdx)) / fftSize;
 
 % PGIR transform domain mask
 transMask = zeros(fftSize, 1);
 transMask([nullIdx; pilotIdx]) = 1;
-
-%% package
-randomBits = @(sigSize) randi([0 1], sigSize);
-calcPower = @(sig) sum(sum(abs(sig) .^ 2) / size(sig, 1), 3);
-switch (lower(modType))
-    case 'psk'
-        modulator = @(input, M) pskmod(input, M, InputType="bit");
-        demodulator = @(input, M) pskdemod(input, M, OutputType="bit");
-    case 'qam'
-        modulator = @(input, M) qammod(input, M, InputType="bit", ...
-            UnitAveragePower=true);
-        demodulator = @(input, M) qamdemod(input, M, OutputType="bit", ...
-            UnitAveragePower=true);
-    otherwise
-        error('OFDMMain:invalidModulation', ...
-            'The modulation mode must be one of PSK or QAM.');
-end
-cpAdder = @(sig, len) sig([end-len+1:end, 1:end], :, :);
-cpRemover = @(sig, len) sig(len+1:end, :, :);
-
+refSigFD = zeros(fftSize, 1, nTX, sigBatchPerLoop);
+refSigFD(pilotIdx, :, :, :) = pilotVal;
+refSig = sqrt(fftSize) * ifft(refSigFD, fftSize, 1);
 
 %% data storage
 pgirSNREff = zeros(length(INprobList), length(ampThresholdList));
@@ -83,6 +68,10 @@ replaceSNREff = zeros(length(INprobList), length(ampThresholdList));
 replaceClipBlankSNREff = zeros(length(INprobList), length(ampThresholdList));
 
 %% CP-OFDM
+% Calculate noise power & impulsive noise power
+noisePower = sigPowerRef / (10 ^ (snr / 10));
+INPower = sigPowerRef / (10 ^ (INsnr / 10));
+
 for idxINprob = 1:length(INprobList)
     INprob = INprobList(idxINprob);
 
@@ -104,32 +93,33 @@ for idxINprob = 1:length(INprobList)
     sumRxReplaceClipBlankTxIFFT = zeros(1, length(ampThresholdList));
     sumRxReplaceClipBlank2 = zeros(1, length(ampThresholdList));
 
-    for idxLoop = 1:(baseSigCount / sigPerLoop)
+    for idxLoop = 1:(baseSigCount / sigBatchPerLoop)
         % Tx
-        inDataBits = randomBits([bitsPerOFDMSymbol sigPerLoop nTX]);
-        txModSig = modulator(inDataBits, modOrder);
-        txMapSig = scMap(txModSig, fftSize, nullIdx, pilotIdx, pilotVal);
+        inDataBits = randomBits([bitsPerOFDMSymbol*1 nTX*sigBatchPerLoop]);
+        txModSig = modulator(inDataBits, modOrder, lower(modType));
+        txPreMapSig = reshape(txModSig, [numData 1 nTX sigBatchPerLoop]);
+        txMapSig = scMap(txPreMapSig, fftSize, nullIdx, pilotIdx, pilotVal);
         txIFFTSig = sqrt(fftSize) .* ifft(txMapSig, fftSize, 1);
         txOFDMSig = cpAdder(txIFFTSig, cpLen);
+        txSig = reshape(txOFDMSig, [(fftSize + cpLen)*1 nTX sigBatchPerLoop]);
 
         sumTxIFFT2 = sumTxIFFT2 + sum(abs(txIFFTSig).^2, 'all');
 
         % Channel
-        sigPower = calcPower(txOFDMSig);
-        sigP = mean(sigPower);
-        [fadedSig, channel] = rayleighChannel(txOFDMSig, channelLen, 1 / channelLen, fftSize, nRX);
+        [fadedSig, channel] = rayleighChannel(txSig, channelLen, 1 / channelLen, fftSize, nRX);
 
         % Noise
-        [noise, noisePower] = awgnx(size(fadedSig), snr, sigPower, fadedSig(1));
+        noise = awgnx(size(fadedSig), noisePower, fadedSig(1));
         rxNoisySig = fadedSig + noise;
 
         % Impulsive Noise
-        [impulsiveNoise, ~, happenIdx] = IN(size(rxNoisySig), INsnr, INprob, sigPower, rxNoisySig(1));
+        [impulsiveNoise, happenIdx] = IN(size(rxNoisySig), INPower, INprob, rxNoisySig(1));
         rxINNoisySig = rxNoisySig + impulsiveNoise;
 
         % Rx
         % Orig + IN
-        rxINNoCPSig = cpRemover(rxINNoisySig, cpLen);
+        rxINSig = reshape(rxINNoisySig, [(fftSize + cpLen) 1 nRX sigBatchPerLoop]);
+        rxINNoCPSig = cpRemover(rxINSig, cpLen);
 
         parfor idxAmpThreshold = 1:length(ampThresholdList)
             ampThreshold = ampThresholdList(idxAmpThreshold);
@@ -177,7 +167,7 @@ for idxINprob = 1:length(INprobList)
 
             rxReplaceSig = rxINNoCPSig;
             idxReplace = abs(rxReplaceSig) > ampThreshold;
-            rxReplaceSig(idxReplace) = (sqrt(pi .* sigP ./ 4)) .* exp(1j .* angle(rxReplaceSig(idxReplace)));
+            rxReplaceSig(idxReplace) = (sqrt(pi .* sigPowerRef ./ 4)) .* exp(1j .* angle(rxReplaceSig(idxReplace)));
             rxReplaceEQTDSig = autoConvertFDDoEQ(rxReplaceSig, fftSize, channel, noisePower);
             sumRxReplaceTxIFFT(idxAmpThreshold) = sumRxReplaceTxIFFT(idxAmpThreshold) ...
                                                   + sum(rxReplaceEQTDSig .* conj(txIFFTSig), 'all');
@@ -188,7 +178,7 @@ for idxINprob = 1:length(INprobList)
             idxReplace = abs(rxReplaceClipBlankSig) > tReplaceClip(ampThreshold);
             idxBlank = abs(rxReplaceClipBlankSig) > tReplaceBlank(ampThreshold);
             rxReplaceClipBlankSig(idxClip) = ampThreshold .* exp(1j .* angle(rxReplaceClipBlankSig(idxClip)));
-            rxReplaceClipBlankSig(idxReplace) = (sqrt(pi .* sigP ./ 4)) .* exp(1j .* angle(rxReplaceClipBlankSig(idxReplace)));
+            rxReplaceClipBlankSig(idxReplace) = (sqrt(pi .* sigPowerRef ./ 4)) .* exp(1j .* angle(rxReplaceClipBlankSig(idxReplace)));
             rxReplaceClipBlankSig(idxBlank) = 0;
             rxReplaceClipBlankEQTDSig = autoConvertFDDoEQ(rxReplaceClipBlankSig, fftSize, channel, noisePower);
             sumRxReplaceClipBlankTxIFFT(idxAmpThreshold) = sumRxReplaceClipBlankTxIFFT(idxAmpThreshold) ...
