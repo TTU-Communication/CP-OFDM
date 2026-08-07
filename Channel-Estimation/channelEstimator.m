@@ -26,12 +26,12 @@ function [hEst] = channelEstimator(h, nfft, nullIdx, pilotIdx)
 
     [prmStr, dataIdx] = setup(h, nfft, nullIdx, pilotIdx);
 
-    hEst = zeros([length(dataIdx) prmStr.NumSymbols], 'like', h(1));
+    hEst = zeros([length(dataIdx) 1 1 prmStr.NumBatch], 'like', h(1));
 
-    for idx = 1:prmStr.NumSymbols
+    for idx = 1:prmStr.NumBatch
         % Channel estimation
-        F = griddedInterpolant(prmStr.PilotIndices, h(:, idx));
-        hEst(:, idx) = F(dataIdx);
+        F = griddedInterpolant(prmStr.PilotIndices, h(:, :, :, idx));
+        hEst(:, :, :, idx) = F(dataIdx);
     end
 
 end
@@ -39,9 +39,9 @@ end
 function [prmStr, pDataIdx] = setup(h, nfft, NullIndices, PilotIndices)
 
     validateattributes(h, {'numeric'}, ...
-        {'2d', 'nonempty', 'finite'}, mfilename, 'H', 1);
+        {'nonempty', 'finite'}, mfilename, 'H', 1);
 
-    numSym = size(h, 2);
+    [~, ~, ~, numBatch]  = size(h);
 
     validateattributes(nfft, {'numeric'}, ...
         {'real', 'integer', 'scalar', 'positive', 'nonempty', 'finite'}, ...
@@ -49,7 +49,7 @@ function [prmStr, pDataIdx] = setup(h, nfft, NullIndices, PilotIndices)
 
     prmStr = struct(...
         "FFTLength", nfft, ...
-        "NumSymbols", numSym, ...
+        "NumBatch", numBatch, ...
         "NullIndices", NullIndices, ...
         "PilotIndices", PilotIndices);
 

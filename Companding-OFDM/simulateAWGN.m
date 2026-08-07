@@ -11,7 +11,7 @@ modType = 'QAM';                % Modulation (Avaliable with 'PSK', 'QAM')
 
 % Simulation parameter
 baseSigCount = 10000;           % testing signal numbers (will multiply a factor)
-sigPerLoop = 100;               % Every loop test signals
+sigBatchPerLoop = 100;          % Every loop test signals
 ebn0List = 0:1:20;              % Energy per bit to noise power spectral density ratio(dB)
 
 % Companding parameter
@@ -19,27 +19,14 @@ mu = 1;                         % Companding parameter (mu-law)
 
 %% value depends on parameter
 numData = fftSize - length(nullIdx);                  % Data subcarrier size
+dataIdx = setdiff((1:fftSize)', nullIdx);
 bitsPerModSymbol = log2(modOrder);
 bitsPerOFDMSymbol = numData * bitsPerModSymbol;
 
+sigPowerRef = numData / fftSize;
+
 %% package 
-randomBits = @(r, c) randi([0 1], r, c);
-calcPower = @(sig) sum(abs(sig) .^ 2) / size(sig, 1);
-switch (lower(modType))
-    case 'psk'
-        modulator = @(input, M) pskmod(input, M, InputType="bit");
-        demodulator = @(input, M) pskdemod(input, M, OutputType="bit");
-    case 'qam'
-        modulator = @(input, M) qammod(input, M, InputType="bit", ...
-            UnitAveragePower=true);
-        demodulator = @(input, M) qamdemod(input, M, OutputType="bit", ...
-            UnitAveragePower=true);
-    otherwise
-        error('OFDMMain:invalidModulation', ...
-            'The modulation mode must be one of PSK or QAM.');
-end
-cpAdder = @(sig, len) [sig(end-len+1:end, :); sig];
-cpRemover = @(sig, len) sig(len+1:end, :);
+calcPower = @(sig) sum(abs(sig) .^ 2, "all") / numel(sig);
 peakAvgDB = @(sig) 10 * log10(max(abs(sig) .^ 2) ./ mean(abs(sig) .^ 2));
 
 %% data storage
@@ -55,22 +42,23 @@ for idxEbn0 = 1:size(ebn0List, 2)
         + 10 * log10(numData / fftSize);
     % Calculate the amount of test signals based on SNR
     totalSigCount = (10 ^ floor(snr / 10)) * baseSigCount;
-    % BER storage depends on EbN0
-    tempBER = zeros(1, totalSigCount / sigPerLoop);
-    tempBERCmp = zeros(1, totalSigCount / sigPerLoop);
-
     fprintf('EbN0 = %2d, max signal number = %d\n', ebn0List(idxEbn0), totalSigCount);
+    % fprintf('Start at %s\n', getTimeStr);
+
+    % BER storage depends on EbN0
+    tempBER = zeros(1, totalSigCount / sigBatchPerLoop);
+    tempBERCmp = zeros(1, totalSigCount / sigBatchPerLoop);
 
     if idxEbn0 == length(ebn0List)
-        paprCP = zeros(totalSigCount / sigPerLoop, sigPerLoop);
-        paprCmp = zeros(totalSigCount / sigPerLoop, sigPerLoop);
-        randIdx = randi([1 totalSigCount / sigPerLoop], 1);
+        paprCP = zeros(totalSigCount / sigBatchPerLoop, sigBatchPerLoop);
+        paprCmp = zeros(totalSigCount / sigBatchPerLoop, sigBatchPerLoop);
+        randIdx = randi([1 totalSigCount / sigBatchPerLoop], 1);
     end
 
-    parfor idxRun = 1:(totalSigCount / sigPerLoop)
+    parfor idxRun = 1:(totalSigCount / sigBatchPerLoop)
         % Tx
-        inDataBits = randomBits(bitsPerOFDMSymbol, sigPerLoop);
-        txModSig = modulator(inDataBits, modOrder);
+        inDataBits = randomBits([bitsPerOFDMSymbol sigBatchPerLoop]);
+        txModSig = modulator(inDataBits, modOrder, lower(modType));
         txMapSig = scMap(txModSig, fftSize, nullIdx);
         txIFFTSig = sqrt(fftSize) .* ifft(txMapSig, fftSize, 1);
         txCmpSig = companding(txIFFTSig, mu);
@@ -79,23 +67,23 @@ for idxEbn0 = 1:size(ebn0List, 2)
         cmpSigPower = calcPower(txCmpSig);
 
         % Noise CP-OFDM
-        noise = awgnx(size(txIFFTSig), snr, sigPower, txIFFTSig(1));
-        noisePower = calcPower(noise);
+        noisePower = sigPower / (10 ^ (snr / 10));
+        noise = awgnx(size(txIFFTSig), noisePower, txIFFTSig(1));
         rxNoisySig = txIFFTSig + noise;
         % Noise Companding OFDM
-        noiseCmp = awgnx(size(txCmpSig), snr, cmpSigPower, txCmpSig(1));
-        noiseCmpPower = calcPower(noiseCmp);
+        noiseCmpPower = cmpSigPower / (10 ^ (snr / 10));
+        noiseCmp = awgnx(size(txCmpSig), noiseCmpPower, txCmpSig(1));
         rxNoisyCmpSig = txCmpSig + noiseCmp;
 
         % Rx CP-OFDM
         rxFFTSig = 1 / sqrt(fftSize) .* fft(rxNoisySig, fftSize, 1);
         rxDemapSig = scDemap(rxFFTSig, fftSize, nullIdx);
-        outDataBits = demodulator(rxDemapSig, modOrder);
+        outDataBits = demodulator(rxDemapSig, modOrder, lower(modType));
         % Rx Companding OFDM
         rxDeCmpSig = decompanding(rxNoisyCmpSig, mu);
         rxFFTCmpSig = 1 / sqrt(fftSize) .* fft(rxDeCmpSig, fftSize, 1);
         rxDemapCmpSig = scDemap(rxFFTCmpSig, fftSize, nullIdx);
-        outDataBitsCmp = demodulator(rxDemapCmpSig, modOrder);
+        outDataBitsCmp = demodulator(rxDemapCmpSig, modOrder, lower(modType));
         
         % BER calculate
         [~, tempBER(idxRun)] = biterr(inDataBits, outDataBits);
@@ -117,6 +105,10 @@ for idxEbn0 = 1:size(ebn0List, 2)
     berCmp(idxEbn0) = mean(tempBERCmp);
 
 end
+
+% fprintf('\n');
+% fprintf('%s\n', repmat('-', 1, 50));
+% fprintf('All process has done at %s\n', getTimeStr);
 
 %% plot BER
 figure

@@ -29,6 +29,7 @@ function y = scMap(x, nfft, varargin)
     FFTLen = prmStr.FFTLength;
     numSym = prmStr.NumSymbols;
     numTX = prmStr.NumTXs;
+    numBatch = prmStr.NumBatch;
 
     if isempty(prmStr.Pilots)
         typeIn = cast(1i, "like", x);
@@ -36,10 +37,10 @@ function y = scMap(x, nfft, varargin)
         typeIn = cast(1i, "like", prmStr.Pilots(1) + x(1));
     end
 
-    y = zeros([FFTLen numSym numTX], 'like', typeIn);
-    y(dataIdx, :, :) = x;
+    y = zeros([FFTLen numSym numTX numBatch], 'like', typeIn);
+    y(dataIdx, :, :, :) = x;
     if ~isempty(prmStr.PilotIndices) && ~isempty(prmStr.Pilots)
-        y(prmStr.PilotIndices, :) = prmStr.Pilots;
+        y(prmStr.PilotIndices, :, :, :) = prmStr.Pilots;
     end
 
 end
@@ -47,9 +48,9 @@ end
 function [prmStr, pDataIdx] = setup(x, nfft, varargin)
 
     validateattributes(x, {'numeric'}, ...
-        {'3d', 'nonempty', 'finite'}, mfilename, 'X', 1);
+        {'nonempty', 'finite'}, mfilename, 'X', 1);
 
-    [numST, numSym, numTX] = size(x);
+    [numSample, numSymbol, numTX, numBatch] = size(x);
 
     validateattributes(nfft, {'numeric'}, ...
         {'real', 'integer', 'scalar', 'positive', 'nonempty', 'finite'}, ...
@@ -77,8 +78,9 @@ function [prmStr, pDataIdx] = setup(x, nfft, varargin)
 
     prmStr = struct(...
         "FFTLength", nfft, ...
-        "NumSymbols", numSym, ...
+        "NumSymbols", numSymbol, ...
         "NumTXs", numTX, ...
+        "NumBatch", numBatch, ...
         "NullIndices", NullIndices, ...
         "PilotIndices", PilotIndices, ...
         "Pilots", Pilots);
@@ -94,16 +96,16 @@ function [prmStr, pDataIdx] = setup(x, nfft, varargin)
     end
 
     if ~isempty(prmStr.NullIndices)
-        checkNulls(prmStr, numST);
+        checkNulls(prmStr, numSample);
 
         dataIdx = double(setdiff((1:nfft)', prmStr.NullIndices));
     else
         if prmStr.hasPilots
             numPilots = length(prmStr.PilotIndices);
-            assert(nfft == numST + numPilots, ...
+            assert(nfft == numSample + numPilots, ...
                 "Invalid input argument lengths for signal, and pilot indices.");
         else
-            assert(nfft == numST, ...
+            assert(nfft == numSample, ...
                 "Invalid input argument lengths for signal.");
         end
 
@@ -111,7 +113,7 @@ function [prmStr, pDataIdx] = setup(x, nfft, varargin)
     end
     
     if ~isempty(prmStr.PilotIndices)
-        checkPilots(prmStr, numSym);
+        checkPilots(prmStr, numSymbol, numTX, numBatch);
 
         pDataIdx = setdiff(dataIdx, prmStr.PilotIndices);
     else
@@ -120,7 +122,7 @@ function [prmStr, pDataIdx] = setup(x, nfft, varargin)
 
 end
 
-function checkNulls(prmStr, numST)
+function checkNulls(prmStr, numSample)
     validateattributes(prmStr.NullIndices, {'numeric'}, ...
         {'column', 'real', 'positive', 'integer', 'nonempty', 'finite'}, ...
         mfilename, 'NULLIDX');
@@ -139,12 +141,12 @@ function checkNulls(prmStr, numST)
         numPilots = 0;
     end
 
-    assert(prmStr.FFTLength == numST + numNulls + numPilots, ...
+    assert(prmStr.FFTLength == numSample + numNulls + numPilots, ...
         "Invalid input argument lengths for signal, null indices, and pilot indices.");
 
 end
 
-function checkPilots(prmStr, numSym)
+function checkPilots(prmStr, numSymbol, numTX, numBatch)
     validateattributes(prmStr.PilotIndices, {'numeric'}, ...
         {'column', 'real', 'positive', 'integer', 'nonempty', 'finite'}, ...
         mfilename, 'PILOTIDX');
@@ -162,8 +164,8 @@ function checkPilots(prmStr, numSym)
         prmStr.NullIndices])) == (numPilots + numNulls), ...
         'Null and Pilot indices are not unique.');
 
-    [np, pSym] = size(prmStr.Pilots);
+    [np, pSymbol, pTX, pBatch] = size(prmStr.Pilots);
 
-    assert(np == numPilots && pSym == numSym, ...
+    assert(np == numPilots && pSymbol == numSymbol && pTX == numTX && pBatch == numBatch, ...
         'Pilots are not the same size as the pilot indices and symbol counts.');
 end

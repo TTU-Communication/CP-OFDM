@@ -11,7 +11,7 @@ modType = 'QAM';                % Modulation (Avaliable with 'PSK', 'QAM')
 
 % Simulation parameter
 baseSigCount = 10000;           % testing signal numbers (will multiply a factor)
-sigPerLoop = 100;               % Every loop test signals
+sigBatchPerLoop = 100;          % Every loop test signals
 ebn0List = 0:1:20;              % Energy per bit to noise power spectral density ratio(dB)
 
 %% value depends on parameter
@@ -20,22 +20,7 @@ dataIdx = setdiff((1:fftSize)', nullIdx);
 bitsPerModSymbol = log2(modOrder);
 bitsPerOFDMSymbol = numData * bitsPerModSymbol;
 
-%% package 
-randomBits = @(sigSize) randi([0 1], sigSize);
-calcPower = @(sig) sum(sum(abs(sig) .^ 2) / size(sig, 1), 3);
-switch (lower(modType))
-    case 'psk'
-        modulator = @(input, M) pskmod(input, M, InputType="bit");
-        demodulator = @(input, M) pskdemod(input, M, OutputType="bit");
-    case 'qam'
-        modulator = @(input, M) qammod(input, M, InputType="bit", ...
-            UnitAveragePower=true);
-        demodulator = @(input, M) qamdemod(input, M, OutputType="bit", ...
-            UnitAveragePower=true);
-    otherwise
-        error('OFDMMain:invalidModulation', ...
-            'The modulation mode must be one of PSK or QAM.');
-end
+sigPowerRef = numData / fftSize;
 
 %% data storage
 ber = zeros(1, length(ebn0List));
@@ -47,28 +32,33 @@ for idxEbn0 = 1:size(ebn0List, 2)
         + 10 * log10(numData / fftSize);
     % Calculate the amount of test signals based on SNR
     totalSigCount = (10 ^ floor(snr / 10)) * baseSigCount;
-    % BER storage depends on EbN0
-    tempBER = zeros(1, totalSigCount / sigPerLoop);
-
     fprintf('EbN0 = %2d, max signal number = %d\n', ebn0List(idxEbn0), totalSigCount);
+    % fprintf('Start at %s\n', getTimeStr);
 
-    parfor idxRun = 1:(totalSigCount / sigPerLoop)
+    % Calculate noise power
+    noisePower = sigPowerRef / (10 ^ (snr / 10));
+    % BER storage depends on EbN0
+    tempBER = zeros(1, totalSigCount / sigBatchPerLoop);
+
+    parfor idxRun = 1:(totalSigCount / sigBatchPerLoop)
         % Tx
-        inDataBits = randomBits([bitsPerOFDMSymbol sigPerLoop]);
-        txModSig = modulator(inDataBits, modOrder);
-        txMapSig = scMap(txModSig, fftSize, nullIdx);
+        inDataBits = randomBits([bitsPerOFDMSymbol*1 1*sigBatchPerLoop]);
+        txModSig = modulator(inDataBits, modOrder, lower(modType));
+        txPreMapSig = reshape(txModSig, [numData 1 1 sigBatchPerLoop]);
+        txMapSig = scMap(txPreMapSig, fftSize, nullIdx);
         txIFFTSig = sqrt(fftSize) .* ifft(txMapSig, fftSize, 1);
-
-        sigPower = calcPower(txIFFTSig);
+        txSig = reshape(txIFFTSig, [fftSize*1 1 sigBatchPerLoop]);
 
         % Noise
-        [noise, noisePower] = awgnx(size(txIFFTSig), snr, sigPower, txIFFTSig(1));
-        rxNoisySig = txIFFTSig + noise;
+        noise = awgnx(size(txSig), noisePower, txSig(1));
+        rxNoisySig = txSig + noise;
 
         % Rx
-        rxFFTSig = 1 / sqrt(fftSize) .* fft(rxNoisySig, fftSize, 1);
+        rxSig = reshape(rxNoisySig, [fftSize 1 1 sigBatchPerLoop]);
+        rxFFTSig = 1 / sqrt(fftSize) .* fft(rxSig, fftSize, 1);
         rxDemapSig = scDemap(rxFFTSig, fftSize, nullIdx);
-        outDataBits = demodulator(rxDemapSig, modOrder);
+        rxPreDemodSig = reshape(rxDemapSig, [numData*1 1*sigBatchPerLoop]);
+        outDataBits = demodulator(rxDemapSig, modOrder, lower(modType));
 
         % BER calculate
         [~, tempBER(idxRun)] = biterr(inDataBits(:), outDataBits(:));
@@ -78,6 +68,10 @@ for idxEbn0 = 1:size(ebn0List, 2)
     ber(idxEbn0) = mean(tempBER);
 
 end
+
+% fprintf('\n');
+% fprintf('%s\n', repmat('-', 1, 50));
+% fprintf('All process has done at %s\n', getTimeStr);
 
 %% plot BER
 figure
