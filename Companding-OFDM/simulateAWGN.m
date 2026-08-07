@@ -42,11 +42,10 @@ for idxEbn0 = 1:size(ebn0List, 2)
         + 10 * log10(numData / fftSize);
     % Calculate the amount of test signals based on SNR
     totalSigCount = (10 ^ floor(snr / 10)) * baseSigCount;
+    fprintf('EbN0 = %2d, max signal number = %d\n', ebn0List(idxEbn0), totalSigCount);
     % BER storage depends on EbN0
     tempBER = zeros(1, totalSigCount / sigBatchPerLoop);
     tempBERCmp = zeros(1, totalSigCount / sigBatchPerLoop);
-
-    fprintf('EbN0 = %2d, max signal number = %d\n', ebn0List(idxEbn0), totalSigCount);
 
     if idxEbn0 == length(ebn0List)
         paprCP = zeros(totalSigCount / sigBatchPerLoop, sigBatchPerLoop);

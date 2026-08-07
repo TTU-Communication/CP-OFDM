@@ -41,10 +41,12 @@ for idxEbn0 = 1:size(ebn0List, 2)
         + 10 * log10(numData / (fftSize + cpLen));
     % Calculate the amount of test signals based on SNR
     totalSigCount = (10 ^ floor(snr / 10)) * baseSigCount;
+    fprintf('EbN0 = %2d, max signal number = %d\n', ebn0List(idxEbn0), totalSigCount);
+
+    % Calculate noise power
+    noisePower = sigPowerRef / (10 ^ (snr / 10));
     % BER storage depends on EbN0
     tempBER = zeros(1, totalSigCount / sigBatchPerLoop);
-
-    fprintf('EbN0 = %2d, max signal number = %d\n', ebn0List(idxEbn0), totalSigCount);
 
     for idxRun = 1:(totalSigCount / sigBatchPerLoop)
         % Tx
@@ -60,7 +62,6 @@ for idxEbn0 = 1:size(ebn0List, 2)
         [fadedSig, channel] = ricianChannel(txOFDMSig, channelLen, kFactor, fftSize, nRX);
 
         % Noise
-        noisePower = sigPowerRef / (10 ^ (snr / 10));
         noise = awgnx(size(fadedSig), noisePower, fadedSig(1));
         rxNoisySig = fadedSig + noise;
 
