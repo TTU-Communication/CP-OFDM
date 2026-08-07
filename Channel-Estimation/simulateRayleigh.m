@@ -15,7 +15,7 @@ channelLen = 8;                 % Multipath length
 
 % Simulation parameter
 baseSigCount = 10000;           % testing signal numbers (will multiply a factor)
-sigBatchPerLoop = 100;               % Every loop test signals
+sigBatchPerLoop = 100;          % Every loop test signals
 ebn0List = 0:1:20;              % Energy per bit to noise power spectral density ratio(dB)
 
 %% value depends on parameter
@@ -39,12 +39,13 @@ for idxEbn0 = 1:size(ebn0List, 2)
     % Calculate the amount of test signals based on SNR
     totalSigCount = (10 ^ floor(snr / 10)) * baseSigCount;
     fprintf('EbN0 = %2d, max signal number = %d\n', ebn0List(idxEbn0), totalSigCount);
+    % fprintf('Start at %s\n', getTimeStr);
+
     % Calculate noise power
     noisePower = sigPowerRef / (10 ^ (snr / 10));
     % BER storage depends on EbN0
     tempBER = zeros(1, totalSigCount / sigBatchPerLoop);
     tempEstBER = zeros(1, totalSigCount / sigBatchPerLoop);
-
 
     parfor idxRun = 1:(totalSigCount / sigBatchPerLoop)
         % Tx
@@ -91,6 +92,10 @@ for idxEbn0 = 1:size(ebn0List, 2)
     estBER(idxEbn0) = mean(tempEstBER);
 
 end
+
+% fprintf('\n');
+% fprintf('%s\n', repmat('-', 1, 50));
+% fprintf('All process has done at %s\n', getTimeStr);
 
 %% plot BER
 figure
