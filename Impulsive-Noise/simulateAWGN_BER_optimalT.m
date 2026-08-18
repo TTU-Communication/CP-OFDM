@@ -28,8 +28,8 @@ iterCount = 20;                 % Number of PGIR iterations
 
 tClipBlank = @(T) (T * 1.4);    % Clipping-Blanking
 deepMu = 0.5;                   % Deep-Clipping
-tReplaceClip = @(T) (T * 1.2);  % Replacement-Clipping-Blanking Clipping
-tReplaceBlank = @(T) (T * 1.4); % Replacement-Clipping-Blanking Blanking
+tClipReplace = @(T) (T * 1.2);  % Clipping-Replacement-Blanking Clipping
+tClReBlank = @(T) (T * 1.4);    % Clipping-Replacement-Blanking Blanking
 
 rng(2025);
 gpurng(2025);
@@ -49,6 +49,10 @@ transMask([nullIdx; pilotIdx]) = 1;
 refSigFD = zeros(fftSize, 1, 1, sigBatchPerLoop);
 refSigFD(pilotIdx, :, :, :) = pilotVal;
 refSig = sqrt(fftSize) * ifft(refSigFD, fftSize, 1);
+
+sigConfig = struct('numData', numData, 'modOrder', modOrder, 'modType', modType, ...
+    'fftSize', fftSize, 'nullIdx', nullIdx, 'pilotIdx', pilotIdx, 'transMask', transMask, ...
+    'refSig', refSig, 'sigPowerRef', sigPowerRef, 'bitsPerOFDMSymbol', bitsPerOFDMSymbol);
 
 %% data storage
 berPGIR = zeros(1, length(ebn0List));
@@ -113,40 +117,20 @@ for idxEbn0 = 1:size(ebn0List, 2)
         ampThreshold = optThresPGIR;
         dataMask = abs(rxINSig) < ampThreshold;
         rxPGIRSig = PGIR(rxINSig, refSig, dataMask, transMask, iterCount);
-        rxPGIRFDSig = 1 / sqrt(fftSize) .* fft(rxPGIRSig, fftSize, 1);
-        rxDemapPGIRSig = scDemap(rxPGIRFDSig, fftSize, nullIdx, pilotIdx);
-        rxPreDemodPGIRSig = reshape(rxDemapPGIRSig, [numData*1 1*sigBatchPerLoop]);
-        outPGIRDataBits = demodulator(rxPreDemodPGIRSig, modOrder, lower(modType));
+        outPGIRDataBits = rxDemod(sigConfig, rxPGIRSig);
 
         % ampThreshold = optTList(2);
         ampThreshold = optThresBlank;
-        rxBlankSig = rxINSig;
-        idxBlank = abs(rxBlankSig) > ampThreshold;
-        rxBlankSig(idxBlank) = 0;
-        rxBlankFDSig = 1 / sqrt(fftSize) .* fft(rxBlankSig, fftSize, 1);
-        rxDemapBlankSig = scDemap(rxBlankFDSig, fftSize, nullIdx, pilotIdx);
-        rxPreDemodBlankSig = reshape(rxDemapBlankSig, [numData*1 1*sigBatchPerLoop]);
-        outBlankDataBits = demodulator(rxPreDemodBlankSig, modOrder, lower(modType));
+        rxBlankSig = blanking(rxINSig, ampThreshold);
+        outBlankDataBits = rxDemod(sigConfig, rxBlankSig);
 
         ampThreshold = optThresClip;
-        rxClipSig = rxINSig;
-        idxClip = abs(rxClipSig) > ampThreshold;
-        rxClipSig(idxClip) = ampThreshold .* exp(1j .* angle(rxClipSig(idxClip)));
-        rxClipFDSig = 1 / sqrt(fftSize) .* fft(rxClipSig, fftSize, 1);
-        rxDemapClipSig = scDemap(rxClipFDSig, fftSize, nullIdx, pilotIdx);
-        rxPreDemodClipSig = reshape(rxDemapClipSig,  [numData*1 1*sigBatchPerLoop]);
-        outClipDataBits = demodulator(rxPreDemodClipSig, modOrder, lower(modType));
+        rxClipSig = clipping(rxINSig, ampThreshold);
+        outClipDataBits = rxDemod(sigConfig, rxClipSig);
 
         ampThreshold = optThresClipBlank;
-        rxClipBlankSig = rxINSig;
-        idxClip = abs(rxClipBlankSig) > ampThreshold;
-        idxBlank = abs(rxClipBlankSig) > tClipBlank(ampThreshold);
-        rxClipBlankSig(idxClip) = ampThreshold .* exp(1j .* angle(rxClipBlankSig(idxClip)));
-        rxClipBlankSig(idxBlank) = 0;
-        rxClipBlankFDSig = 1 / sqrt(fftSize) .* fft(rxClipBlankSig, fftSize, 1);
-        rxDemapClipBlankSig = scDemap(rxClipBlankFDSig, fftSize, nullIdx, pilotIdx);
-        rxPreDemodClipBlankSig = reshape(rxDemapClipBlankSig,  [numData*1 1*sigBatchPerLoop]);
-        outClipBlankDataBits = demodulator(rxPreDemodClipBlankSig, modOrder, lower(modType));
+        rxClipBlankSig = clipBlank(rxINSig, ampThreshold, tClipBlank(ampThreshold));
+        outClipBlankDataBits = rxDemod(sigConfig, rxClipBlankSig);
 
         % ampThreshold = optTList(5);
         % rxDeepClipSig = rxINNoisySig;
@@ -217,3 +201,13 @@ legend;
 xlabel('$E_{b}/N_{0}$', 'Interpreter', 'latex', 'FontSize', 16);
 ylabel('BER', 'FontSize', 16);
 grid on;
+
+%%
+function [outDataBits] = rxDemod(config, rxSig)
+    sigCount = size(rxSig, 4);
+
+    rxFDSig = 1 / sqrt(config.fftSize) .* fft(rxSig, config.fftSize, 1);
+    rxDemapSig = scDemap(rxFDSig, config.fftSize, config.nullIdx, config.pilotIdx);
+    rxPreDemodSig = reshape(rxDemapSig, [config.numData*1 1*sigCount]);
+    outDataBits = demodulator(rxPreDemodSig, config.modOrder, lower(config.modType));
+end

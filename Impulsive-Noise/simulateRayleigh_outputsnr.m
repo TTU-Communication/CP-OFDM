@@ -36,8 +36,8 @@ iterCount = 20;                 % Number of PGIR iterations
 
 tClipBlank = @(T) (T * 1.4);    % Clipping-Blanking
 deepMu = 0.5;                   % Deep-Clipping
-tReplaceClip = @(T) (T * 1.2);  % Replacement-Clipping-Blanking Clipping
-tReplaceBlank = @(T) (T * 1.4); % Replacement-Clipping-Blanking Blanking
+tClipReplace = @(T) (T * 1.2);  % Clipping-Replacement-Blanking Clipping
+tClReBlank = @(T) (T * 1.4);    % Clipping-Replacement-Blanking Blanking
 
 rng(2025);
 gpurng(2025);
@@ -65,7 +65,7 @@ clipSNREff = zeros(length(INprobList), length(ampThresholdList));
 clipBlankSNREff = zeros(length(INprobList), length(ampThresholdList));
 deepClipSNREff = zeros(length(INprobList), length(ampThresholdList));
 replaceSNREff = zeros(length(INprobList), length(ampThresholdList));
-replaceClipBlankSNREff = zeros(length(INprobList), length(ampThresholdList));
+clipReplaceBlankSNREff = zeros(length(INprobList), length(ampThresholdList));
 
 %% CP-OFDM
 % Calculate noise power & impulsive noise power
@@ -130,56 +130,36 @@ for idxINprob = 1:length(INprobList)
             sumRxPGIRTxIFFT(idxAmpThreshold) = sumRxPGIRTxIFFT(idxAmpThreshold) + sum(rxPGIREQTDSig .* conj(txIFFTSig), 'all');
             sumRxPGIR2(idxAmpThreshold) = sumRxPGIR2(idxAmpThreshold) + sum(abs(rxPGIREQTDSig) .^ 2, 'all');
 
-            rxBlankSig = rxINNoCPSig;
-            idxBlank = abs(rxBlankSig) > ampThreshold;
-            rxBlankSig(idxBlank) = 0;
+            rxBlankSig = blanking(rxINNoCPSig, ampThreshold);
             rxBlankEQTDSig = autoConvertFDDoEQ(rxBlankSig, fftSize, channel, noisePower);
             sumRxBlankTxIFFT(idxAmpThreshold) = sumRxBlankTxIFFT(idxAmpThreshold) + sum(rxBlankEQTDSig .* conj(txIFFTSig), 'all');
             sumRxBlank2(idxAmpThreshold) = sumRxBlank2(idxAmpThreshold) + sum(abs(rxBlankEQTDSig) .^ 2, 'all');
 
-            rxClipSig = rxINNoCPSig;
-            idxClip = abs(rxClipSig) > ampThreshold;
-            rxClipSig(idxClip) = ampThreshold .* exp(1j .* angle(rxClipSig(idxClip)));
+            rxClipSig = clipping(rxINNoCPSig, ampThreshold);
             rxClipEQTDSig = autoConvertFDDoEQ(rxClipSig, fftSize, channel, noisePower);
             sumRxClipTxIFFT(idxAmpThreshold) = sumRxClipTxIFFT(idxAmpThreshold) + sum(rxClipEQTDSig .* conj(txIFFTSig), 'all');
             sumRxClip2(idxAmpThreshold) = sumRxClip2(idxAmpThreshold) + sum(abs(rxClipEQTDSig) .^ 2, 'all');
 
-            rxClipBlankSig = rxINNoCPSig;
-            idxClip = abs(rxClipBlankSig) > ampThreshold;
-            idxBlank = abs(rxClipBlankSig) > tClipBlank(ampThreshold);
-            rxClipBlankSig(idxClip) = ampThreshold .* exp(1j .* angle(rxClipBlankSig(idxClip)));
-            rxClipBlankSig(idxBlank) = 0;
+            rxClipBlankSig = clipBlank(rxINNoCPSig, ampThreshold, tClipBlank(ampThreshold));
             rxClipBlankEQTDSig = autoConvertFDDoEQ(rxClipBlankSig, fftSize, channel, noisePower);
             sumRxClipBlankTxIFFT(idxAmpThreshold) = sumRxClipBlankTxIFFT(idxAmpThreshold) ...
                                                     + sum(rxClipBlankEQTDSig .* conj(txIFFTSig), 'all');
             sumRxClipBlank2(idxAmpThreshold) = sumRxClipBlank2(idxAmpThreshold) + sum(abs(rxClipBlankEQTDSig) .^ 2, 'all');
 
-            rxDeepClipSig = rxINNoCPSig;
-            idxDeepClip = abs(rxDeepClipSig) > ampThreshold;
-            idxBlank = abs(rxDeepClipSig) > ((1 + deepMu) / deepMu * ampThreshold);
-            rxDeepClipSig(idxDeepClip) = (ampThreshold - deepMu .* (abs(rxDeepClipSig(idxDeepClip)) - ampThreshold)) ...
-                .* exp(1j .* angle(rxDeepClipSig(idxDeepClip)));
-            rxDeepClipSig(idxBlank) = 0;
+            rxDeepClipSig = deepClip(rxINNoCPSig, ampThreshold, deepMu);
             rxDeepClipEQTDSig = autoConvertFDDoEQ(rxDeepClipSig, fftSize, channel, noisePower);
             sumRxDeepClipTxIFFT(idxAmpThreshold) = sumRxDeepClipTxIFFT(idxAmpThreshold) ...
                                                    + sum(rxDeepClipEQTDSig .* conj(txIFFTSig), 'all');
             sumRxDeepClip2(idxAmpThreshold) = sumRxDeepClip2(idxAmpThreshold) + sum(abs(rxDeepClipEQTDSig) .^ 2, 'all');
 
-            rxReplaceSig = rxINNoCPSig;
-            idxReplace = abs(rxReplaceSig) > ampThreshold;
-            rxReplaceSig(idxReplace) = (sqrt(pi .* sigPowerRef ./ 4)) .* exp(1j .* angle(rxReplaceSig(idxReplace)));
+            rxReplaceSig = replacement(rxINNoCPSig, ampThreshold, sigPowerRef);
             rxReplaceEQTDSig = autoConvertFDDoEQ(rxReplaceSig, fftSize, channel, noisePower);
             sumRxReplaceTxIFFT(idxAmpThreshold) = sumRxReplaceTxIFFT(idxAmpThreshold) ...
                                                   + sum(rxReplaceEQTDSig .* conj(txIFFTSig), 'all');
             sumRxReplace2(idxAmpThreshold) = sumRxReplace2(idxAmpThreshold) + sum(abs(rxReplaceEQTDSig) .^ 2, 'all');
 
-            rxReplaceClipBlankSig = rxINNoCPSig;
-            idxClip = abs(rxReplaceClipBlankSig) > ampThreshold;
-            idxReplace = abs(rxReplaceClipBlankSig) > tReplaceClip(ampThreshold);
-            idxBlank = abs(rxReplaceClipBlankSig) > tReplaceBlank(ampThreshold);
-            rxReplaceClipBlankSig(idxClip) = ampThreshold .* exp(1j .* angle(rxReplaceClipBlankSig(idxClip)));
-            rxReplaceClipBlankSig(idxReplace) = (sqrt(pi .* sigPowerRef ./ 4)) .* exp(1j .* angle(rxReplaceClipBlankSig(idxReplace)));
-            rxReplaceClipBlankSig(idxBlank) = 0;
+            rxReplaceClipBlankSig = clipReplaceBlank(rxINNoCPSig, ampThreshold, tClipReplace(ampThreshold), ...
+                                    tClReBlank(ampThreshold), sigPowerRef);
             rxReplaceClipBlankEQTDSig = autoConvertFDDoEQ(rxReplaceClipBlankSig, fftSize, channel, noisePower);
             sumRxReplaceClipBlankTxIFFT(idxAmpThreshold) = sumRxReplaceClipBlankTxIFFT(idxAmpThreshold) ...
                                                            + sum(rxReplaceClipBlankEQTDSig .* conj(txIFFTSig), 'all');
@@ -196,7 +176,7 @@ for idxINprob = 1:length(INprobList)
     clipBlankSNREff(idxINprob, :) = calcBussgangPoolSNR(sumTxIFFT2, sumRxClipBlankTxIFFT, sumRxClipBlank2);
     deepClipSNREff(idxINprob, :) = calcBussgangPoolSNR(sumTxIFFT2, sumRxDeepClipTxIFFT, sumRxDeepClip2);
     replaceSNREff(idxINprob, :) = calcBussgangPoolSNR(sumTxIFFT2, sumRxReplaceTxIFFT, sumRxReplace2);
-    replaceClipBlankSNREff(idxINprob, :) = calcBussgangPoolSNR(sumTxIFFT2, sumRxReplaceClipBlankTxIFFT, sumRxReplaceClipBlank2);
+    clipReplaceBlankSNREff(idxINprob, :) = calcBussgangPoolSNR(sumTxIFFT2, sumRxReplaceClipBlankTxIFFT, sumRxReplaceClipBlank2);
 
 end
 
@@ -223,7 +203,7 @@ for idxINprob = 1:length(INprobList)
         DisplayName='Deep Clipping', MarkerIndices=markerIdx, LineWidth=linewidth, MarkerSize=markersize);
     plot(ampThresholdList, 10 * log10(replaceSNREff(idxINprob, :)), '-', Marker='x', Color=c(idxINprob, :), ...
         DisplayName='Replacement', MarkerIndices=markerIdx, LineWidth=linewidth, MarkerSize=markersize);
-    plot(ampThresholdList, 10 * log10(replaceClipBlankSNREff(idxINprob, :)), '-', Marker='*', Color=c(idxINprob, :), ...
+    plot(ampThresholdList, 10 * log10(clipReplaceBlankSNREff(idxINprob, :)), '-', Marker='*', Color=c(idxINprob, :), ...
         DisplayName='Clipping + Replacement + Blanking', MarkerIndices=markerIdx, LineWidth=linewidth, MarkerSize=markersize);
 
 end
