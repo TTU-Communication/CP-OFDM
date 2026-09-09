@@ -3,8 +3,9 @@ function [outSig] = equalizer(inSig, H, noisePower, sigPower)
     arguments
         % Input signal and it's dimension should be [Nsample Nsymbol Nrx Nbatch]
         inSig (:,:,:, :) {mustBeArrayOrGPU, mustBeFinite, mustBeNonempty}
-        % Channel matrix and it's dimension should be [Nsample Nrx Ntx Nbatch]
-        H (:,:,:,:) {mustBeArrayOrGPU, mustBeFinite, mustBeNonempty}
+        % Channel matrix: [Nsample Nrx Ntx Nbatch]
+        % Scalar H = 1 indicates no channel distortion and bypasses equalization.
+        H (:,:,:,:) {mustBeArrayOrGPU, mustBeFinite, mustBeNonempty, mustBeValidChannel(H, inSig)}
         % noisePower and sigPower are optional.
         % If noisePower is omitted:
         %   nRX >= nTX: ZF spatial equalizer
@@ -15,35 +16,23 @@ function [outSig] = equalizer(inSig, H, noisePower, sigPower)
         sigPower (1,:,:) {mustBeArrayOrGPU, mustBeFinite, mustBeReal, mustBePositive} = []
     end
 
-    [nSample, ~, nRX, nBatch] = size(inSig);
+    if isempty(noisePower) && ~isempty(sigPower)
+        error("Equalizer:SignalPowerWithoutNoisePower", ...
+            "sigPower can only be used when noisePower is provided.");
+    end
+
+    if isscalar(H) && H == 1
+        outSig = inSig;
+        return
+    end
+
+    [~, ~, nRX, nBatch] = size(inSig);
     nTX = size(H, 3);
-
-    if size(H, 1) ~= nSample
-        error("Equalizer:SampleMismatch", ...
-            "inSig and H must have the same sample/subcarrier count.");
-    end
-
-    if size(H, 2) ~= nRX
-        error("Equalizer:RxMismatch", ...
-            "The RX dimensions of inSig and H must agree.");
-    end
-
-    nChannelBatch = size(H, 4);
-
-    if nChannelBatch ~= 1 && nChannelBatch ~= nBatch
-        error("Equalizer:BatchMismatch", ...
-            "H batch size must be 1 or match inSig.");
-    end
 
     % change dimension from [Nsample Nsymbol Nrx Nbatch] to [Nrx Nsymbol Nsample Nbatch]
     inSigPage = permute(inSig, [3 2 1 4]);
     % change dimension from [Nsample Nrx Ntx Nbatch] to [Nrx Ntx Nsample Nbatch]
     HPage = permute(H, [2 3 1 4]);
-
-    if isempty(noisePower) && ~isempty(sigPower)
-        error("Equalizer:SignalPowerWithoutNoisePower", ...
-            "sigPower can only be used when noisePower is provided.");
-    end
 
     if ~isempty(noisePower)
         % change dimension from [1 Nrx Nbatch] to [Nrx Nrx 1 Nbatch]
@@ -119,4 +108,32 @@ function [cov, covInv] = makeDiagonalCovariance(powerVal, nAnt, nBatch, refSampl
     cov = identityMatrix .* powerVec;
     covInv = identityMatrix .* (1 ./ powerVec);
 
+end
+
+function mustBeValidChannel(H, inSig)
+
+    % Scalar H = 1 denotes a bypass channel:
+    % no channel equalization is required.
+    if isscalar(H) && H == 1
+        return
+    end
+
+    [nSample, ~, nRX, nBatch] = size(inSig);
+
+    if size(H, 1) ~= nSample
+        error("Equalizer:SampleMismatch", ...
+            "inSig and H must have the same sample/subcarrier count.");
+    end
+
+    if size(H, 2) ~= nRX
+        error("Equalizer:RxMismatch", ...
+            "The RX dimensions of inSig and H must agree.");
+    end
+
+    nChannelBatch = size(H, 4);
+
+    if nChannelBatch ~= 1 && nChannelBatch ~= nBatch
+        error("Equalizer:BatchMismatch", ...
+            "H batch size must be 1 or match inSig.");
+    end
 end
